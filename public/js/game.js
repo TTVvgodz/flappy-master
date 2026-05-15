@@ -87,45 +87,73 @@ const RARITY_LABELS = {common:'Common',uncommon:'Uncommon',rare:'Rare',epic:'Epi
 
 // ── Music ─────────────────────────────────────────────────────────────────────
 const TRACKS = [
-  {name:'Menu Chill',   url:null, gen:'menu'},
-  {name:'Game Beat',    url:null, gen:'game'},
-  {name:'Ranked Hype',  url:null, gen:'ranked'},
+  {name:'Chill Breeze',  gen:'chill1'},{name:'Lo-Fi Drift', gen:'chill2'},
+  {name:'Sky Walk',      gen:'chill3'},{name:'Game Beat',   gen:'game'},
+  {name:'Upbeat Run',    gen:'game2'},{name:'Ranked Hype',  gen:'ranked'},
 ];
-let audioCtx=null,musicGain=null,musicOsc=null,currentTrackIdx=0,musicPlaying=false,musicNodes=[];
+let audioCtx=null,currentTrackIdx=0,musicPlaying=false,musicNodes=[],musicGainNode=null;
 
 function getAudio(){if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}return audioCtx;}
 
 function stopMusic(){musicNodes.forEach(n=>{try{n.stop();}catch(e){}});musicNodes=[];musicPlaying=false;document.getElementById('music-btn').textContent='▶';}
 
-function playGeneratedTrack(type){
+const TRACK_DATA={
+  chill1:{bpm:72,notes:[261,294,330,349,392,440,494],type:'sine',bass:[98,110,131],pattern:[0,2,4,2,1,3,4,3]},
+  chill2:{bpm:80,notes:[220,261,294,330,349,392],type:'sine',bass:[82,98,110],pattern:[0,1,3,1,2,4,2,1]},
+  chill3:{bpm:68,notes:[196,220,261,294,330,392,440],type:'triangle',bass:[73,82,98],pattern:[0,3,2,4,1,3,0,2]},
+  game:  {bpm:120,notes:[261,330,392,523,659],type:'square',bass:[98,131,165],pattern:[0,1,2,1,3,2,4,3]},
+  game2: {bpm:130,notes:[294,330,392,440,523,659],type:'sawtooth',bass:[110,131,147],pattern:[0,2,1,3,0,4,2,3]},
+  ranked:{bpm:148,notes:[220,294,330,392,440,494,523],type:'sawtooth',bass:[110,147,165],pattern:[0,1,3,4,2,4,3,1]},
+};
+function playGeneratedTrack(gen){
   const ac=getAudio();if(!ac)return;
   stopMusic();
   musicPlaying=true;
   document.getElementById('music-btn').textContent='⏸';
-  const g=ac.createGain();g.gain.value=0.06;g.connect(ac.destination);
-  const notes=type==='ranked'?[220,294,330,392,440,494,523]:[196,220,262,294,330,392,440];
-  let t=ac.currentTime;
-  const bpm=type==='ranked'?140:type==='game'?120:90;
-  const beat=60/bpm;
-  const loop=()=>{
+  const td=TRACK_DATA[gen]||TRACK_DATA.chill1;
+  const masterGain=ac.createGain();masterGain.gain.value=0.04;masterGain.connect(ac.destination);
+  musicGainNode=masterGain;
+  const reverb=ac.createConvolver();
+  const len=ac.sampleRate*.8;const buf=ac.createBuffer(2,len,ac.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);}
+  reverb.buffer=buf;reverb.connect(masterGain);
+  const dryGain=ac.createGain();dryGain.gain.value=0.7;dryGain.connect(masterGain);
+  const wetGain=ac.createGain();wetGain.gain.value=0.3;wetGain.connect(reverb);
+  const beat=60/td.bpm;
+  let t=ac.currentTime+0.1;let step=0;
+  const melody=()=>{
     if(!musicPlaying)return;
-    const n=notes[Math.floor(Math.random()*notes.length)];
-    const o=ac.createOscillator();o.type=type==='menu'?'sine':'square';
-    o.frequency.value=n;o.connect(g);
-    o.start(t);o.stop(t+beat*.45);
-    musicNodes.push(o);
-    t+=beat*.5;
-    if(t<ac.currentTime+4) setTimeout(loop,0);else setTimeout(loop,(t-ac.currentTime-4)*1000);
+    const pi=td.pattern[step%td.pattern.length];
+    const freq=td.notes[pi%td.notes.length];
+    const o=ac.createOscillator();const g=ac.createGain();
+    o.type=td.type;o.frequency.value=freq;
+    o.connect(g);g.connect(dryGain);g.connect(wetGain);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.18,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+beat*0.8);
+    o.start(t);o.stop(t+beat*0.85);musicNodes.push(o);
+    // bass on beat 1 and 3
+    if(step%2===0){
+      const bf=td.bass[Math.floor(step/2)%td.bass.length];
+      const bo=ac.createOscillator();const bg2=ac.createGain();
+      bo.type='sine';bo.frequency.value=bf;
+      bo.connect(bg2);bg2.connect(masterGain);
+      bg2.gain.setValueAtTime(0,t);bg2.gain.linearRampToValueAtTime(0.12,t+0.04);
+      bg2.gain.exponentialRampToValueAtTime(0.001,t+beat*1.8);
+      bo.start(t);bo.stop(t+beat*1.9);musicNodes.push(bo);
+    }
+    step++;t+=beat;
+    if(t<ac.currentTime+3)setTimeout(melody,0);else setTimeout(melody,(t-ac.currentTime-3)*1000);
   };
-  loop();
+  melody();
 }
 
 function toggleMusic(){
   if(musicPlaying){stopMusic();}
   else{const t=TRACKS[currentTrackIdx];document.getElementById('music-track').textContent=t.name;playGeneratedTrack(t.gen);}
 }
-function prevTrack(){currentTrackIdx=(currentTrackIdx-1+TRACKS.length)%TRACKS.length;if(musicPlaying){stopMusic();playGeneratedTrack(TRACKS[currentTrackIdx].gen);}document.getElementById('music-track').textContent=TRACKS[currentTrackIdx].name;}
-function nextTrack(){currentTrackIdx=(currentTrackIdx+1)%TRACKS.length;if(musicPlaying){stopMusic();playGeneratedTrack(TRACKS[currentTrackIdx].gen);}document.getElementById('music-track').textContent=TRACKS[currentTrackIdx].name;}
+function prevTrack(){currentTrackIdx=(currentTrackIdx-1+TRACKS.length)%TRACKS.length;const t=TRACKS[currentTrackIdx];document.getElementById('music-track').textContent=t.name;if(musicPlaying){stopMusic();playGeneratedTrack(t.gen);}}
+function nextTrack(){currentTrackIdx=(currentTrackIdx+1)%TRACKS.length;const t=TRACKS[currentTrackIdx];document.getElementById('music-track').textContent=t.name;if(musicPlaying){stopMusic();playGeneratedTrack(t.gen);}}
+function setMusicVolume(v){if(musicGainNode)musicGainNode.gain.value=v;}
 
 // SFX
 function playFlap(){const ac=getAudio();if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.type='sine';o.frequency.setValueAtTime(520,ac.currentTime);o.frequency.exponentialRampToValueAtTime(780,ac.currentTime+0.06);g.gain.setValueAtTime(0.12,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.1);o.start();o.stop(ac.currentTime+0.1);}
@@ -138,6 +166,7 @@ let currentUser=null, authToken=localStorage.getItem('fm_token')||null;
 let isGameScreen=false, hubSection='play', chosenDiff='normal', gameMode='normal';
 let bird,pipes,score,frame,gState,groundOffset,sessionBest,particles,coinPopups,deadBird,trailPoints;
 let menuFrame=0,menuBirdY=0,menuBirdVY=0,menuPipes=[],menuBirds=[],menuObjects=[];
+let activeDailyChallenge=0;
 let matchId=null,opponentName=null,opponentAlive=true,matchCountdown=null;
 let ghostY=0,ghostAngle=0,opponentSkin=null;
 let crownUser=null; // username of global #1
@@ -375,40 +404,57 @@ async function renderDaily(el){
 }
 
 // ── Cases ─────────────────────────────────────────────────────────────────────
+const CRATE_CATEGORIES=[
+  {key:'bird', label:'🐦 Bird Crates',       ids:['bird_common','bird_premium']},
+  {key:'pipe', label:'🎋 Pipe Crates',       ids:['pipe_common','pipe_premium']},
+  {key:'bg',   label:'🌄 Background Crates', ids:['bg_common','bg_premium']},
+  {key:'trail',label:'✨ Trail Crates',       ids:['trail_common','trail_premium']},
+];
+
 async function renderCases(el){
-  if(!currentUser){el.innerHTML='<div class="empty">log in to buy and open cases</div>';return;}
+  if(!currentUser){el.innerHTML='<div class="empty">log in to buy and open crates</div>';return;}
   const cases=await apiFetch('/api/cases');
   const inv=currentUser.inventory||{};
   const myCase=inv.cases||[];
-  el.innerHTML=`
-    <div class="slabel">buy cases (50 🪙 each)</div>
-    <div class="cases-grid">
-      ${cases.map(c=>{
-        const owned=myCase.filter(x=>x===c.id).length;
-        return`<div class="case-card" onclick="buyCase('${c.id}')" style="border-color:${c.color}22;">
-          <div class="case-icon">📦</div>
-          <div class="case-name" style="color:${c.color};">${c.name}</div>
-          <div class="case-price">50 🪙</div>
-          ${owned>0?`<div class="case-owned" style="color:${c.color};">owned: ${owned}</div>`:''}
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="slabel">your cases (${myCase.length})</div>
-    ${myCase.length===0?'<div class="empty">no cases — buy some above!</div>':
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;">'+
-      [...new Set(myCase)].map(cid=>{
-        const c=cases.find(x=>x.id===cid)||{name:cid,color:'#fff'};
-        const count=myCase.filter(x=>x===cid).length;
-        return`<div style="background:rgba(255,255,255,.07);border:1px solid ${c.color}33;border-radius:8px;padding:8px 12px;cursor:pointer;text-align:center;" onclick="openCase('${cid}')">
-          <div style="font-size:20px;">📦</div>
-          <div style="font-size:10px;font-weight:700;color:${c.color};">${c.name}</div>
-          <div style="font-size:10px;color:rgba(255,255,255,.4);">×${count} — tap to open</div>
-        </div>`;
-      }).join('')+'</div>'
-    }
-    <div style="font-size:11px;color:rgba(255,255,255,.25);margin-top:10px;">Duplicate items give coins instead.</div>`;
+  const caseMap={};cases.forEach(c=>caseMap[c.id]=c);
+  let html='';
+  CRATE_CATEGORIES.forEach(cat=>{
+    html+='<div class="slabel">'+cat.label+'</div><div style="display:flex;gap:8px;margin-bottom:14px;">';
+    cat.ids.forEach(cid=>{
+      const c=caseMap[cid];if(!c)return;
+      const owned=myCase.filter(x=>x===cid).length;
+      const PRM={bird_common:['Common','Uncommon','Rare','Epic'],bird_premium:['Rare','Epic','Legendary','Mythical'],pipe_common:['Common','Uncommon','Rare','Epic'],pipe_premium:['Rare','Epic','Legendary','Mythical'],bg_common:['Common','Uncommon','Rare','Epic'],bg_premium:['Rare','Epic','Legendary','Mythical'],trail_common:['Common','Uncommon','Rare','Epic'],trail_premium:['Rare','Epic','Legendary','Mythical']};
+      const RC2={Common:'#aaa',Uncommon:'#5dcaa5',Rare:'#5ec8f5',Epic:'#afa9ec',Legendary:'#fac775',Mythical:'#e24b4a'};
+      const poolR=(PRM[cid]||[]).map(r=>'<span style="color:'+RC2[r]+';font-size:8px;font-weight:700;">'+r+'</span>').join(' ');
+      html+='<div style="flex:1;background:rgba(255,255,255,.05);border:1px solid '+c.color+'33;border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;" onclick="buyCase('+JSON.stringify(cid)+')">'+
+        '<div style="font-size:24px;margin-bottom:4px;">'+(c.icon||'📦')+'</div>'+
+        '<div style="font-size:10px;font-weight:700;color:'+c.color+';margin-bottom:3px;">'+c.name+'</div>'+
+        (poolR?'<div style="margin-bottom:4px;line-height:1.8;">'+poolR+'</div>':'')+
+        '<div style="font-size:10px;color:rgba(255,255,255,.35);">50 🪙</div>'+
+        (owned>0?'<div style="font-size:9px;font-weight:700;color:#5dcaa5;margin-top:3px;">x'+owned+' owned</div>':'')+
+        '</div>';
+    });
+    html+='</div>';
+  });
+  html+='<div class="slabel">your crates ('+myCase.length+')</div>';
+  if(myCase.length===0){
+    html+='<div class="empty">no crates — buy some above!</div>';
+  } else {
+    html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+    [...new Set(myCase)].forEach(cid=>{
+      const c=caseMap[cid]||{name:cid,color:'#fff',icon:'📦'};
+      const count=myCase.filter(x=>x===cid).length;
+      html+='<div style="background:rgba(255,255,255,.07);border:1px solid '+c.color+'44;border-radius:10px;padding:10px 14px;cursor:pointer;text-align:center;min-width:80px;" onclick="openCase('+JSON.stringify(cid)+')">'+
+        '<div style="font-size:22px;">'+(c.icon||'📦')+'</div>'+
+        '<div style="font-size:10px;font-weight:700;color:'+c.color+';margin-top:3px;">'+c.name+'</div>'+
+        '<div style="font-size:10px;color:rgba(255,255,255,.4);">×'+count+' · open</div>'+
+        '</div>';
+    });
+    html+='</div>';
+  }
+  html+='<div style="font-size:11px;color:rgba(255,255,255,.22);margin-top:10px;">Duplicates give coins instead. Each crate costs 50 🪙.</div>';
+  el.innerHTML=html;
 }
-
 async function buyCase(caseId){
   if(!currentUser)return;
   if((currentUser.coins||0)<50){alert('not enough coins! need 50 🪙');return;}
@@ -553,13 +599,20 @@ function sendChatHub(){
 }
 function appendChatMsg(msg){
   appendHubChatMsg(msg);
-  // in-game chat
-  const box=document.getElementById('chat-msgs');if(!box)return;
-  const div=document.createElement('div');div.className='chat-msg';
-  const av=avColor(msg.username);
-  div.innerHTML=`<strong style="color:${av.fg};">${msg.username}:</strong> ${escHtml(msg.text)}`;
-  box.appendChild(div);if(box.children.length>30)box.removeChild(box.firstChild);
-  box.scrollTop=box.scrollHeight;
+  // In hub chat section
+  const hubBox=document.getElementById('hub-chat-msgs');
+  if(hubBox) appendHubChatMsg(msg,hubBox);
+  // In-game persistent msgs box
+  const box=document.getElementById('chat-msgs');
+  if(box){
+    const div=document.createElement('div');div.className='chat-msg';
+    const av=avColor(msg.username);
+    div.innerHTML='<strong style="color:'+av.fg+';">'+msg.username+':</strong> '+escHtml(msg.text);
+    box.appendChild(div);if(box.children.length>30)box.removeChild(box.firstChild);
+    box.scrollTop=box.scrollHeight;
+    // Auto-hide after 5s
+    setTimeout(()=>{if(div.parentNode)div.style.opacity='0';setTimeout(()=>{if(div.parentNode)div.parentNode.removeChild(div);},600);},5000);
+  }
 }
 function sendChat(){
   const inp=document.getElementById('chat-input');if(!inp)return;
@@ -662,6 +715,11 @@ function showCutscene(){
   setTimeout(()=>{cutsceneActive=false;gState='idle';},2000);
 }
 
+function playAgain(){
+  hideDeadButtons();
+  resetGame();gState='idle';
+}
+
 function exitToHub(){
   resetGame();isGameScreen=false;
   document.getElementById('hud').classList.remove('active');
@@ -693,7 +751,7 @@ function resetGame(){
   bird={y:H/2,vy:0,angle:0};
   pipes=[];score=0;frame=0;groundOffset=0;
   gState='cutscene';deadBird=null;particles=[];coinPopups=[];trailPoints=[];
-  cutsceneActive=false;
+  cutsceneActive=false;hideDeadButtons();_deadButtonsVisible=false;
   const sc=document.getElementById('hud-score');if(sc)sc.textContent='0';
 }
 
@@ -716,7 +774,7 @@ function spawnPipe(){
   let topH;
   const minTop=90,maxTop=H-GROUND_H-d.gap-90;
   if(gameMode==='daily'){
-    if(pipes.length===0){const s=new Date();dailyRandState=s.getFullYear()*10000+(s.getMonth()+1)*100+s.getDate();}
+    if(pipes.length===0){const s=new Date();dailyRandState=(s.getFullYear()*10000+(s.getMonth()+1)*100+s.getDate())*10+(activeDailyChallenge%10);}
     topH=minTop+dailyRand()*(maxTop-minTop);
   } else {
     topH=minTop+Math.random()*(maxTop-minTop);
@@ -795,10 +853,14 @@ function initMenuScene(){
 function menuLoop(){
   menuFrame++;
   drawSky(BG_SKINS[0]);
+
+  // Scrolling pipes
   if(menuFrame%Math.round(W/3.2)===0)menuPipes.push({x:W+10,topH:H*.1+Math.random()*H*.42});
   menuPipes.forEach(p=>p.x-=1.6);menuPipes=menuPipes.filter(p=>p.x+PIPE_W>0);
   menuPipes.forEach(p=>drawPipe(p.x,p.topH,H*.36,PIPE_SKINS[0]));
   drawGround();
+
+  // Animated birds
   menuBirds.forEach(b=>{
     b.frame++;b.vy+=.14;b.y+=b.vy;b.x+=b.vx;
     if(b.y>H*.68){b.vy=-5.5-Math.random()*2;b.y=H*.68;}
@@ -806,6 +868,8 @@ function menuLoop(){
     if(b.x>W+60){b.x=-60;b.y=H*.1+Math.random()*H*.5;}
     drawBirdAt(b.x,b.y,b.vy*.07,Math.sin(b.frame*.22)*4,b.skin);
   });
+
+  // Background objects
   menuObjects.forEach(o=>{
     if(o.type==='coin'){
       o.y+=o.vy;o.life+=.007;
@@ -819,12 +883,52 @@ function menuLoop(){
       ctx.fillText(o.type==='plane'?'✈️':'🛸',o.x,o.y);ctx.restore();
     }
   });
-  ctx.fillStyle='rgba(0,0,0,.32)';ctx.fillRect(0,0,W,H);
+
+  // Semi-transparent overlay so panel is readable
+  ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(0,0,W,H);
+
+  // Animated title — top center
+  const pulse=Math.sin(menuFrame*.035)*.04+1;
+  const titleSize=Math.round(Math.min(W*.1,H*.075));
+  const titleY=H*.13;
+  // Glow
+  ctx.save();
+  ctx.textAlign='center';
+  ctx.shadowColor='#5ec8f5';ctx.shadowBlur=Math.round(20+Math.sin(menuFrame*.05)*8);
+  ctx.font='bold '+Math.round(titleSize*pulse)+'px sans-serif';
+  ctx.fillStyle='#fff';
+  ctx.fillText('🐦',W/2,titleY);
+  ctx.restore();
+  // Title text with gradient
+  const grd=ctx.createLinearGradient(W/2-200,0,W/2+200,0);
+  grd.addColorStop(0,'#5ec8f5');
+  grd.addColorStop(0.5,'#ffffff');
+  grd.addColorStop(1,'#fac775');
+  ctx.save();
+  ctx.textAlign='center';
+  ctx.shadowColor='rgba(0,0,0,.8)';ctx.shadowBlur=12;
+  ctx.font='bold '+Math.round(titleSize*.72)+'px sans-serif';
+  ctx.fillStyle=grd;
+  ctx.fillText('FLAPPY MASTER',W/2,titleY+Math.round(titleSize*.88));
+  ctx.font=Math.round(titleSize*.3)+'px sans-serif';
+  ctx.fillStyle='rgba(255,255,255,.5)';
+  ctx.fillText('the ultimate flapping experience',W/2,titleY+Math.round(titleSize*1.28));
+  ctx.restore();
 }
 
 function hubLoop(){
   menuFrame++;const eq=getEquipped();drawSky(eq.bg);drawGround();
   ctx.fillStyle='rgba(0,0,0,.75)';ctx.fillRect(0,0,W,H);
+}
+
+let _deadButtonsVisible=false;
+function showDeadButtons(){
+  if(_deadButtonsVisible)return;_deadButtonsVisible=true;
+  const el=document.getElementById('dead-buttons');if(el)el.style.display='flex';
+}
+function hideDeadButtons(){
+  if(!_deadButtonsVisible)return;_deadButtonsVisible=false;
+  const el=document.getElementById('dead-buttons');if(el)el.style.display='none';
 }
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
@@ -936,11 +1040,10 @@ function gameLoop(){
     ctx.font='bold '+fs+'px sans-serif';ctx.fillText('game over',W/2,H/2-fs*.65);
     ctx.font=Math.round(fs*.46)+'px sans-serif';ctx.fillStyle='rgba(255,255,255,.75)';
     ctx.fillText('score: '+score,W/2,H/2+fs*.05);
-    ctx.font=Math.round(fs*.38)+'px sans-serif';ctx.fillStyle='rgba(255,255,255,.5)';
-    ctx.fillText('tap to try again',W/2,H/2+fs*.62);
-    if(!currentUser){ctx.font=Math.round(fs*.34)+'px sans-serif';ctx.fillStyle='rgba(255,255,255,.3)';ctx.fillText('create account to save scores & earn coins',W/2,H/2+fs*1.25);}
+    if(!currentUser){ctx.font=Math.round(fs*.34)+'px sans-serif';ctx.fillStyle='rgba(255,255,255,.3)';ctx.fillText('create account to save scores & earn coins',W/2,H/2+fs*1.5);}
     ctx.shadowBlur=0;
-  }
+    showDeadButtons();
+  } else { hideDeadButtons(); }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -962,6 +1065,11 @@ async function loadMenuLb(){
 (async function init(){
   initMenuScene();menuBirdY=H/2;resetGame();gState='idle';
   document.getElementById('music-track').textContent=TRACKS[0].name;
+  // Auto-play after first interaction to satisfy browser policy
+  document.addEventListener('click',function startMusic(){
+    if(!musicPlaying){playGeneratedTrack(TRACKS[currentTrackIdx].gen);}
+    document.removeEventListener('click',startMusic);
+  },{once:true});
   if(authToken){
     const data=await apiFetch('/api/me');
     if(data.user){currentUser=data.user;goHub();}

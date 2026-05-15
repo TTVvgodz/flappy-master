@@ -30,28 +30,53 @@ const RANKS = [
 ];
 
 const CASES = {
-  basic:   { name:'Basic Case',   price:50, color:'#5ec8f5', pool:[
+  // Bird crates
+  bird_common:   { name:'Feather Crate',  price:50,  color:'#F5C842', icon:'🐦', pool:[
     {type:'bird',id:'sky',rarity:'common'},{type:'bird',id:'rose',rarity:'common'},
     {type:'bird',id:'jade',rarity:'uncommon'},{type:'bird',id:'coral',rarity:'uncommon'},
+    {type:'bird',id:'amethyst',rarity:'rare'},{type:'bird',id:'gold',rarity:'rare'},
+    {type:'bird',id:'shadow',rarity:'epic'},{type:'bird',id:'phoenix',rarity:'epic'},
+    {type:'bird',id:'void_bird',rarity:'legendary'},
+  ]},
+  bird_premium:  { name:'Golden Egg Crate',price:50, color:'#fac775', icon:'🥚', pool:[
+    {type:'bird',id:'amethyst',rarity:'rare'},{type:'bird',id:'gold',rarity:'rare'},
+    {type:'bird',id:'shadow',rarity:'epic'},{type:'bird',id:'phoenix',rarity:'epic'},
+    {type:'bird',id:'void_bird',rarity:'legendary'},{type:'bird',id:'void_bird',rarity:'mythical'},
+  ]},
+  // Pipe crates
+  pipe_common:   { name:'Pipe Crate',     price:50,  color:'#5BC63C', icon:'🎋', pool:[
     {type:'pipe',id:'sky',rarity:'common'},{type:'pipe',id:'lava',rarity:'common'},
-    {type:'pipe',id:'teal',rarity:'uncommon'},{type:'bg',id:'sunset',rarity:'common'},
-    {type:'bg',id:'forest',rarity:'uncommon'},{type:'trail',id:'fire',rarity:'uncommon'},
-    {type:'trail',id:'ice',rarity:'rare'},{type:'bird',id:'amethyst',rarity:'rare'},
-    {type:'pipe',id:'amethyst',rarity:'rare'},{type:'bg',id:'ocean',rarity:'rare'},
-  ]},
-  premium: { name:'Premium Case', price:50, color:'#fac775', pool:[
-    {type:'bird',id:'gold',rarity:'rare'},{type:'bird',id:'shadow',rarity:'rare'},
+    {type:'pipe',id:'teal',rarity:'uncommon'},{type:'pipe',id:'amethyst',rarity:'uncommon'},
     {type:'pipe',id:'gold',rarity:'rare'},{type:'pipe',id:'rose',rarity:'rare'},
-    {type:'bg',id:'candy',rarity:'rare'},{type:'bg',id:'storm',rarity:'epic'},
-    {type:'trail',id:'lightning',rarity:'epic'},{type:'trail',id:'rainbow',rarity:'epic'},
-    {type:'bird',id:'phoenix',rarity:'epic'},{type:'pipe',id:'midnight',rarity:'epic'},
-    {type:'bg',id:'aurora',rarity:'legendary'},{type:'trail',id:'galaxy',rarity:'legendary'},
+    {type:'pipe',id:'midnight',rarity:'epic'},{type:'pipe',id:'neon',rarity:'legendary'},
+    {type:'pipe',id:'void_pipe',rarity:'mythical'},
   ]},
-  mythic:  { name:'Mythic Case',  price:50, color:'#e24b4a', pool:[
-    {type:'bird',id:'phoenix',rarity:'legendary'},{type:'pipe',id:'neon',rarity:'legendary'},
-    {type:'bg',id:'cosmic',rarity:'legendary'},{type:'trail',id:'galaxy',rarity:'legendary'},
-    {type:'trail',id:'void',rarity:'mythical'},{type:'bird',id:'void_bird',rarity:'mythical'},
-    {type:'pipe',id:'void_pipe',rarity:'mythical'},{type:'bg',id:'void',rarity:'mythical'},
+  pipe_premium:  { name:'Steel Pipe Crate',price:50, color:'#B0B0B0', icon:'⚙️', pool:[
+    {type:'pipe',id:'gold',rarity:'rare'},{type:'pipe',id:'rose',rarity:'rare'},
+    {type:'pipe',id:'midnight',rarity:'epic'},{type:'pipe',id:'neon',rarity:'legendary'},
+    {type:'pipe',id:'void_pipe',rarity:'mythical'},
+  ]},
+  // Background crates
+  bg_common:     { name:'Horizon Crate',  price:50,  color:'#5EC8F5', icon:'🌄', pool:[
+    {type:'bg',id:'sunset',rarity:'common'},{type:'bg',id:'forest',rarity:'common'},
+    {type:'bg',id:'ocean',rarity:'uncommon'},{type:'bg',id:'candy',rarity:'uncommon'},
+    {type:'bg',id:'storm',rarity:'rare'},{type:'bg',id:'night',rarity:'rare'},
+    {type:'bg',id:'aurora',rarity:'epic'},{type:'bg',id:'cosmic',rarity:'legendary'},
+    {type:'bg',id:'void',rarity:'mythical'},
+  ]},
+  bg_premium:    { name:'Galaxy Crate',   price:50,  color:'#7f77dd', icon:'🌌', pool:[
+    {type:'bg',id:'storm',rarity:'rare'},{type:'bg',id:'aurora',rarity:'epic'},
+    {type:'bg',id:'cosmic',rarity:'legendary'},{type:'bg',id:'void',rarity:'mythical'},
+  ]},
+  // Trail crates
+  trail_common:  { name:'Spark Crate',    price:50,  color:'#FF7A00', icon:'✨', pool:[
+    {type:'trail',id:'fire',rarity:'common'},{type:'trail',id:'ice',rarity:'uncommon'},
+    {type:'trail',id:'lightning',rarity:'rare'},{type:'trail',id:'rainbow',rarity:'rare'},
+    {type:'trail',id:'galaxy',rarity:'epic'},{type:'trail',id:'void',rarity:'legendary'},
+  ]},
+  trail_premium: { name:'Mythic Spark',   price:50,  color:'#e24b4a', icon:'🌀', pool:[
+    {type:'trail',id:'lightning',rarity:'rare'},{type:'trail',id:'rainbow',rarity:'epic'},
+    {type:'trail',id:'galaxy',rarity:'legendary'},{type:'trail',id:'void',rarity:'mythical'},
   ]},
 };
 
@@ -64,7 +89,14 @@ function rollCase(caseId) {
 }
 
 function todayKey() { const d=new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
-function dailySeed() { const d=new Date(); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
+function dailySeed(challengeIdx=0) { const d=new Date(); return (d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate())*10+(challengeIdx%10); }
+const DAILY_CHALLENGES = [
+  {id:0,name:'Morning Flight',diff:'easy',  desc:'A gentle warm-up run',  icon:'☀️'},
+  {id:1,name:'Noon Rush',     diff:'normal',desc:'The classic experience', icon:'🌤️'},
+  {id:2,name:'Storm Run',     diff:'hard',  desc:'Only for the brave',    icon:'⚡'},
+  {id:3,name:'Speed Demon',   diff:'hard',  desc:'Pipes fly fast today',  icon:'💨'},
+  {id:4,name:'Easy Glide',    diff:'easy',  desc:'Relax and rack up coins',icon:'🌿'},
+];
 function xpForLevel(lvl) { return Math.min(lvl*100, 10000); }
 function diffMult(diff) { return diff==='easy'?1:diff==='hard'?2:1.5; }
 
@@ -276,7 +308,10 @@ app.post('/api/equip',authMiddleware,(req,res)=>{
   res.json({user:sanitizeUser(user)});
 });
 
-app.get('/api/daily',(req,res)=>res.json({seed:dailySeed(),key:todayKey()}));
+app.get('/api/daily',(req,res)=>res.json({
+  challenges: DAILY_CHALLENGES.map(c=>({...c,seed:dailySeed(c.id),key:todayKey()})),
+  key:todayKey()
+}));
 app.get('/api/chat',(req,res)=>res.json(db.chat?.slice(-50)||[]));
 
 // Socket
