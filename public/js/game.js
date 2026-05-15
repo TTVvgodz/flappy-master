@@ -160,7 +160,8 @@ const RC_MAP={Common:'#aaa',Uncommon:'#5dcaa5',Rare:'#5ec8f5',Epic:'#afa9ec',Leg
 function drawGradSky(top,bot,t){
   const g=ctx.createLinearGradient(0,0,0,H-GROUND_H);
   g.addColorStop(0,top);g.addColorStop(1,bot);
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H-GROUND_H);
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H-GROUND_H); // only sky area, not ground
 }
 function drawClouds(t,col){
   ctx.fillStyle=col;
@@ -994,28 +995,35 @@ function spawnFeathers(x,y,skin){for(let i=0;i<14;i++){const a=Math.random()*Mat
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawGround(){
+  const gy=H-GROUND_H;
+  // Save and clip to ground area only — prevents grass from poking into sky
+  ctx.save();
+  ctx.beginPath();ctx.rect(0,gy,W,GROUND_H);ctx.clip();
   // Dirt base
-  ctx.fillStyle='#5c3d1e';ctx.fillRect(0,H-GROUND_H,W,GROUND_H);
-  // Grass top stripe
-  const gr=ctx.createLinearGradient(0,H-GROUND_H,0,H-GROUND_H+22);
-  gr.addColorStop(0,'#4caf50');gr.addColorStop(1,'#388e3c');
-  ctx.fillStyle=gr;ctx.fillRect(0,H-GROUND_H,W,22);
-  // Grass blades - fake textured look
-  const bladeCount=Math.floor(W/7);
+  ctx.fillStyle='#4a2e0f';ctx.fillRect(0,gy,W,GROUND_H);
+  // Soil streaks
+  for(let i=0;i<8;i++){ctx.fillStyle='rgba(80,40,10,'+(0.1+i*.03)+')';ctx.fillRect(0,gy+14+i*6,W,3);}
+  // Grass top solid band
+  const gr=ctx.createLinearGradient(0,gy,0,gy+20);
+  gr.addColorStop(0,'#56c43a');gr.addColorStop(1,'#3a8c28');
+  ctx.fillStyle=gr;ctx.fillRect(0,gy,W,20);
+  // Grass blades — drawn FROM ground line upward, clipped so they can't escape
+  const bladeCount=Math.floor(W/6);
   for(let i=0;i<bladeCount;i++){
-    const bx=(i*7+(menuFrame*.8+i*3)%7)%W;
-    const bh=6+((i*17)%7);
-    const lean=Math.sin(menuFrame*.03+i*.5)*2;
-    ctx.fillStyle=i%3===0?'#66bb6a':i%3===1?'#43a047':'#2e7d32';
+    const bx=(i*6+(menuFrame*.5)%6)%W;
+    const bh=5+((i*13)%5); // max 9px tall
+    const lean=Math.sin(menuFrame*.025+i*.6)*1.5;
+    ctx.fillStyle=i%3===0?'#5ecf42':i%3===1?'#48b535':'#3a9428';
     ctx.beginPath();
-    ctx.moveTo(bx,H-GROUND_H);
-    ctx.quadraticCurveTo(bx+lean,H-GROUND_H-bh*.6,bx+lean*1.5,H-GROUND_H-bh);
-    ctx.lineTo(bx+3+lean,H-GROUND_H-bh);
-    ctx.quadraticCurveTo(bx+3+lean*.5,H-GROUND_H-bh*.6,bx+3,H-GROUND_H);
+    ctx.moveTo(bx,gy);
+    ctx.quadraticCurveTo(bx+lean,gy-bh*.5,bx+lean*1.2,gy-bh);
+    ctx.lineTo(bx+3,gy-bh);
+    ctx.quadraticCurveTo(bx+3-lean*.5,gy-bh*.5,bx+3,gy);
     ctx.fill();
   }
-  // Soil texture dots
-  for(let i=0;i<12;i++){ctx.fillStyle='rgba(0,0,0,.15)';ctx.beginPath();ctx.arc((i*83)%W+10,H-GROUND_H+28+(i*7)%18,3,0,Math.PI*2);ctx.fill();}
+  ctx.restore(); // remove clip
+  // Soil dots below grass line
+  for(let i=0;i<10;i++){ctx.fillStyle='rgba(0,0,0,.12)';ctx.beginPath();ctx.arc((i*97)%W+8,gy+25+(i*9)%20,2.5,0,Math.PI*2);ctx.fill();}
 }
 function drawPipe(x,topH,gap,pipe){
   const botY=topH+gap,capH=Math.round(H*.037),capW=PIPE_W+9,ox=(capW-PIPE_W)/2;
@@ -1130,9 +1138,11 @@ function gameLoop(){
   menuFrame++;frame++;
   const eq=getEquipped();
   const d=gameMode==='ranked'?DIFFS.normal:gameMode==='daily'?DIFFS[activeDailyDiff]:DIFFS[chosenDiff];
-  // Draw background using skin draw function
-  if(eq.bg&&eq.bg.draw)try{eq.bg.draw(menuFrame);}catch(e){drawGradSky('#5EC8F5','#87CEEB',menuFrame);}
-  else drawGradSky('#5EC8F5','#87CEEB',menuFrame);
+  // Clear full canvas first
+  ctx.clearRect(0,0,W,H);
+  // Draw sky background (clips to H-GROUND_H automatically)
+  if(eq.bg&&eq.bg.draw){try{eq.bg.draw(menuFrame);}catch(e){drawGradSky('#87CEEB','#E0F4FF',menuFrame);}}
+  else{drawGradSky('#87CEEB','#E0F4FF',menuFrame);}
 
   // Background objects
   if(frame%200===0)menuObjects.push({type:Math.random()>.4?'plane':'ufo',x:-120,y:H*.03+Math.random()*H*.15,speed:2+Math.random()*2});
@@ -1323,7 +1333,12 @@ async function loadMenuLb(){
 (async function init(){
   initMenuScene();resetGame();gState='idle';
   document.getElementById('music-track').textContent=TRACKS[0].name;
-  document.addEventListener('click',function startMusic(){if(!musicPlaying){playGeneratedTrack(TRACKS[currentTrackIdx].gen);}document.removeEventListener('click',startMusic);},{once:true});
+  // Auto-play on any first interaction
+  const _sm=()=>{
+    if(!musicPlaying){playGeneratedTrack(TRACKS[currentTrackIdx].gen);document.getElementById('music-track').textContent=TRACKS[currentTrackIdx].name;}
+    ['click','keydown','touchstart'].forEach(e=>document.removeEventListener(e,_sm));
+  };
+  ['click','keydown','touchstart'].forEach(e=>document.addEventListener(e,_sm));
   if(authToken){const data=await apiFetch('/api/me');if(data.user){currentUser=data.user;socket.emit('set_identity',{token:authToken});goHub();}else{authToken=null;localStorage.removeItem('fm_token');}}
   loadMenuLb();requestAnimationFrame(mainLoop);
 })();
