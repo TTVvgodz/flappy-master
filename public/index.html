@@ -145,13 +145,16 @@ input:focus{border-color:#5ec8f5;}
 .inv-item-rarity{font-size:8px;}
 
 /* Open animation */
-#open-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.85);flex-direction:column;gap:16px;}
+#open-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);flex-direction:column;gap:16px;overflow:hidden;}
 #open-overlay.active{display:flex;}
 #open-box{font-size:80px;animation:spin 0.5s linear infinite;}
 #open-result{text-align:center;}
 #open-result-name{font-size:22px;font-weight:700;color:#fff;margin-bottom:4px;}
 #open-result-rarity{font-size:14px;font-weight:700;margin-bottom:8px;}
 #open-result-dup{font-size:12px;color:rgba(255,255,255,.5);}
+
+#crate-reel{transition:none;}
+@keyframes reveal{0%{transform:scale(0.2);opacity:0;}60%{transform:scale(1.2);}100%{transform:scale(1);opacity:1;}}
 @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}  }
 @keyframes reveal{0%{transform:scale(0.3);opacity:0;}60%{transform:scale(1.15);}100%{transform:scale(1);opacity:1;}}
 #open-item-reveal{animation:reveal 0.6s ease-out forwards;}
@@ -244,6 +247,7 @@ input:focus{border-color:#5ec8f5;}
     <button class="hnb" data-s="daily" onclick="goSection('daily')">📅 daily</button>
     <button class="hnb" data-s="cases" onclick="goSection('cases')">📦 cases</button>
     <button class="hnb" data-s="inventory" onclick="goSection('inventory')">🎒 inventory</button>
+    <button class="hnb" data-s="trade" onclick="goSection('trade')">🔄 trade</button>
     <button class="hnb" data-s="chat" onclick="goSection('chat')">💬 chat</button>
     <button class="hnb" data-s="profile" onclick="goSection('profile')">👤 me</button>
   </div>
@@ -256,7 +260,7 @@ input:focus{border-color:#5ec8f5;}
     <div class="hud-av" id="hud-av"></div>
     <div id="hud-name"></div>
     <span class="hud-chip">🪙 <span id="hud-coins-disp">0</span></span>
-    <button id="hud-menu-btn" onclick="exitToHub()">menu</button>
+    <!-- menu btn hidden during play, shown on death via dead-buttons -->
   </div>
 </div>
 <div id="hud-bottom">
@@ -275,6 +279,7 @@ input:focus{border-color:#5ec8f5;}
 
 <!-- Chat overlay (in-game) -->
 <div id="chat-overlay">
+  <button id="chat-toggle-btn" onclick="toggleChat()" style="align-self:flex-end;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);border-radius:6px 6px 0 0;color:rgba(255,255,255,.6);font-size:10px;padding:3px 8px;cursor:pointer;font-family:inherit;margin:0 0 -1px auto;position:relative;z-index:1;">💬 hide</button>
   <div id="chat-msgs"></div>
   <div id="chat-input-row">
     <input type="text" id="chat-input" placeholder="say something..." maxlength="200"/>
