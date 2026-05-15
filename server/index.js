@@ -15,7 +15,7 @@ const JWT_SECRET=process.env.JWT_SECRET||'flappy-master-secret-change-in-prod';
 const PORT=process.env.PORT||3000;
 const DATA_FILE=path.join(__dirname,'data.json');
 
-function loadData(){try{if(fs.existsSync(DATA_FILE))return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'));}catch(e){}return{users:{},scores:{easy:[],normal:[],hard:[]},daily:{},history:[],chat:[]};}
+function loadData(){try{if(fs.existsSync(DATA_FILE))return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'));}catch(e){}return{users:{},scores:{easy:[],normal:[],hard:[]},daily:{},history:[],chat:[],pendingTrades:{}};}
 function saveData(d){fs.writeFileSync(DATA_FILE,JSON.stringify(d,null,2));}
 let db=loadData();
 // migrate old flat scores array
@@ -352,7 +352,19 @@ io.on('connection',(socket)=>{
   });
 
   socket.on('set_identity',({token})=>{
-    try{const d=jwt.verify(token,JWT_SECRET);socket.data.username=d.username?.toLowerCase();}catch{}
+    try{
+      const d=jwt.verify(token,JWT_SECRET);
+      const uname=d.username?.toLowerCase();
+      socket.data.username=uname;
+      // Deliver any pending trades
+      if(uname&&db.pendingTrades&&db.pendingTrades[uname]){
+        const now=Date.now();
+        const valid=db.pendingTrades[uname].filter(t=>now-t.ts<5*60*1000);
+        valid.forEach(t=>socket.emit('trade_offer',t));
+        delete db.pendingTrades[uname];
+        if(valid.length>0)saveData(db);
+      }
+    }catch{}
   });
 
   socket.on('join_ranked',({token,username,equippedSkin})=>{
@@ -398,11 +410,23 @@ io.on('connection',(socket)=>{
   // ── Trade ──
   socket.on('trade_offer',({token,from,to,offerType,offerId,wantType,wantId})=>{
     try{jwt.verify(token,JWT_SECRET);}catch{return;}
-    // Find target socket
-    const target=[...io.sockets.sockets.values()].find(s=>s.data?.username===to.toLowerCase());
-    if(!target){socket.emit('trade_declined');return;}
-    target.data.tradeOffer={from,offerType,offerId,wantType,wantId};
-    target.emit('trade_offer',{from,offerType,offerId,wantType,wantId});
+    const toKey=to.toLowerCase();
+    const trade={from,to:toKey,offerType,offerId,wantType,wantId,ts:Date.now()};
+    // Try live socket first
+    const target=[...io.sockets.sockets.values()].find(s=>s.data?.username===toKey);
+    if(target){
+      target.data.tradeOffer=trade;
+      target.emit('trade_offer',trade);
+    } else {
+      // Queue for when they come online
+      if(!db.pendingTrades)db.pendingTrades={};
+      if(!db.pendingTrades[toKey])db.pendingTrades[toKey]=[];
+      db.pendingTrades[toKey].push(trade);
+      // Keep only last 5 pending trades per user
+      if(db.pendingTrades[toKey].length>5)db.pendingTrades[toKey]=db.pendingTrades[toKey].slice(-5);
+      saveData(db);
+      socket.emit('chat_message',{username:'System',text:'📦 Trade offer queued — '+to+' will see it when they log in.',ts:Date.now()});
+    }
   });
 
   socket.on('trade_respond',({token,accept,trade})=>{
@@ -443,5 +467,14 @@ io.on('connection',(socket)=>{
     if(matchId&&matches[matchId]){io.to(matchId).emit('opponent_disconnected');delete matches[matchId];}
   });
 });
+
+setInterval(()=>{
+  if(!db.pendingTrades)return;
+  const now=Date.now();
+  Object.keys(db.pendingTrades).forEach(k=>{
+    db.pendingTrades[k]=db.pendingTrades[k].filter(t=>now-t.ts<5*60*1000);
+    if(!db.pendingTrades[k].length)delete db.pendingTrades[k];
+  });
+},10*60*1000);
 
 server.listen(PORT,()=>console.log(`\n🐦 Flappy Master running at http://localhost:${PORT}\n`));

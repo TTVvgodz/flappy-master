@@ -406,7 +406,35 @@ let menuFrame=0,menuPipes=[],menuBirds=[],menuObjects=[];
 let matchId=null,opponentName=null,opponentAlive=true,matchCountdown=null;
 let ghostY=0,ghostAngle=0,opponentSkin=null;
 let crownUser=null;
-let pendingTrade=null; // {from, to, offerType, offerId, wantType, wantId}
+let pendingTrade=null;
+let _badges={inventory:0,trade:0};
+function addBadge(tab,n=1){
+  _badges[tab]=(_badges[tab]||0)+n;
+  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');if(!btn)return;
+  let b=btn.querySelector('.nb');
+  if(!b){b=document.createElement('span');b.className='nb';b.style.cssText='position:absolute;top:-5px;right:-5px;background:#e24b4a;color:#fff;border-radius:50%;width:15px;height:15px;font-size:8px;display:flex;align-items:center;justify-content:center;font-weight:900;pointer-events:none;';btn.style.position='relative';btn.appendChild(b);}
+  b.textContent=_badges[tab];
+}
+function clearBadge(tab){
+  _badges[tab]=0;
+  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');if(!btn)return;
+  const b=btn.querySelector('.nb');if(b)b.remove();
+}
+let _badges={inventory:0,trade:0}; // notification badge counts
+
+function addBadge(tab,count=1){
+  _badges[tab]=(_badges[tab]||0)+count;
+  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');
+  if(!btn)return;
+  let badge=btn.querySelector('.nav-badge');
+  if(!badge){badge=document.createElement('span');badge.className='nav-badge';badge.style.cssText='position:absolute;top:-4px;right:-4px;background:#e24b4a;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700;';btn.style.position='relative';btn.appendChild(badge);}
+  badge.textContent=_badges[tab];
+}
+function clearBadge(tab){
+  _badges[tab]=0;
+  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');
+  if(btn){const b=btn.querySelector('.nav-badge');if(b)b.remove();}
+}
 let _deadButtonsVisible=false;
 let cutsceneActive=false,cutsceneFrame=0,cutsceneBirdX=0;
 
@@ -433,7 +461,8 @@ socket.on('opponent_disconnected',()=>{opponentAlive=false;if(gState==='playing'
 socket.on('match_over',(result)=>{const isWinner=result.winner===currentUser?.username;if(currentUser)refreshUser();setTimeout(()=>showRankedOverPanel(isWinner,result.draw,result.winner),1400);});
 socket.on('chat_message',(msg)=>{appendChatMsg(msg);});
 socket.on('trade_offer',(trade)=>{
-  pendingTrade=trade;
+  pendingTrade={...trade,_ts:Date.now()};
+  addBadge('trade',1);
   showTradeNotif(trade);
 });
 socket.on('trade_accepted',(data)=>{
@@ -443,9 +472,20 @@ socket.on('trade_accepted',(data)=>{
   setTimeout(()=>refreshUser(),500);
 });
 socket.on('trade_declined',()=>{
-  coinPopups.push({x:W/2,y:H/2,text:'Trade Declined',life:1.5,vy:-1.5,big:true});
-  pendingTrade=null;
+  coinPopups.push({x:W/2,y:H*.3,text:'Trade Declined',life:1.5,vy:-1,big:true});
+  pendingTrade=null;clearBadge('trade');
+  if(hubSection==='trade')renderTrade(document.getElementById('hub-body'));
+  clearBadge('trade');
+  if(hubSection==='trade')renderTrade(document.getElementById('hub-body'));
 });
+
+// Auto-decline trade after 5 minutes
+setInterval(()=>{
+  if(pendingTrade&&pendingTrade._ts&&Date.now()-pendingTrade._ts>5*60*1000){
+    pendingTrade=null;clearBadge('trade');
+    if(hubSection==='trade')renderTrade(document.getElementById('hub-body'));
+  }
+},30000);
 
 function startLiveMatch(){
   hideAllPanels();showHubOverlay(false);isGameScreen=true;
@@ -470,6 +510,14 @@ async function apiFetch(path,opts={}){
   return res.json();
 }
 async function refreshUser(){if(!authToken)return;const data=await apiFetch('/api/me');if(data.user){currentUser=data.user;updateHubBar();}}
+function continueAsUser(){
+  if(!window._savedUser)return;
+  currentUser=window._savedUser;
+  socket.emit('set_identity',{token:authToken});
+  stopMusic(); // stop menu music
+  goHub();
+}
+
 async function doRegister(){
   const username=document.getElementById('reg-name').value.trim();
   const password=document.getElementById('reg-pass').value;
@@ -482,7 +530,7 @@ async function doRegister(){
   if(data.error){err.textContent=data.error;return;}
   authToken=data.token;localStorage.setItem('fm_token',authToken);currentUser=data.user;err.textContent='';
   socket.emit('set_identity',{token:authToken});
-  goHub();
+  stopMusic();goHub();
 }
 async function doLogin(){
   const username=document.getElementById('log-name').value.trim();
@@ -492,7 +540,7 @@ async function doLogin(){
   if(data.error){err.textContent=data.error;return;}
   authToken=data.token;localStorage.setItem('fm_token',authToken);currentUser=data.user;err.textContent='';
   socket.emit('set_identity',{token:authToken});
-  goHub();
+  stopMusic();goHub();
 }
 function doLogout(){
   authToken=null;currentUser=null;localStorage.removeItem('fm_token');socket.emit('leave_queue');
@@ -541,8 +589,9 @@ function goSection(s){
   hubSection=s;document.querySelectorAll('.hnb').forEach(b=>b.classList.toggle('active',b.dataset.s===s));
   const el=document.getElementById('hub-body');
   if(s==='play')renderPlay(el);else if(s==='ranked')renderRanked(el);else if(s==='daily')renderDaily(el);
-  else if(s==='cases')renderCases(el);else if(s==='inventory')renderInventory(el);
-  else if(s==='trade')renderTrade(el);
+  else if(s==='cases')renderCases(el);
+  else if(s==='inventory'){clearBadge('inventory');renderInventory(el);}
+  else if(s==='trade'){clearBadge('trade');renderTrade(el);}
   else if(s==='chat')renderChatSection(el);else if(s==='profile')renderProfile(el);
 }
 
@@ -699,8 +748,14 @@ async function openCase(caseId){
   }
   requestAnimationFrame(animate);
 }
+// Called after case opens — add inventory badge
+function onItemReceived(){
+  addBadge('inventory',1);
+}
 function showOpenResult(item,data,rc){
+  addBadge('inventory',1);
   const overlay=document.getElementById('open-overlay');
+  onItemReceived();
   const emoji=item.type==='bird'?'🐦':item.type==='pipe'?'🎋':item.type==='bg'?'🌄':'✨';
   overlay.innerHTML=`
     <div id="open-item-reveal" style="font-size:64px;animation:reveal .5s ease-out;">${emoji}</div>
@@ -760,70 +815,80 @@ function renderInventory(el){
 function setInvTab(tab){invTab=tab;renderInventory(document.getElementById('hub-body'));}
 
 // ── Trade System ──────────────────────────────────────────────────────────────
-let tradeOffer={offerType:'bird',offerId:'',wantType:'bird',wantId:'',toUser:''};
+// ── Trade System ──────────────────────────────────────────────────────────────
+let tradeStep=0; // 0=pick offer, 1=pick want, 2=pick user
+let tradeOffer={offerType:'bird',offerId:null,wantType:'bird',wantId:null,toUser:''};
 
 function renderTrade(el){
   if(!currentUser){el.innerHTML='<div class="empty">log in to trade</div>';return;}
-  el.innerHTML=`
-    <div class="slabel">🔄 trade items with other players</div>
-    <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:12px;">Send a trade offer — the other player accepts or declines in their chat.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-      <div>
-        <div class="slabel">you offer</div>
-        <select id="trade-offer-type" onchange="updateTradeOffer()" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:6px;border-radius:6px;margin-bottom:6px;font-family:inherit;font-size:12px;">
-          <option value="bird">Bird Skin</option>
-          <option value="pipe">Pipe</option>
-          <option value="bg">Background</option>
-          <option value="trail">Trail</option>
-        </select>
-        <select id="trade-offer-id" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:6px;border-radius:6px;font-family:inherit;font-size:12px;"></select>
-      </div>
-      <div>
-        <div class="slabel">you want</div>
-        <select id="trade-want-type" onchange="updateTradeWant()" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:6px;border-radius:6px;margin-bottom:6px;font-family:inherit;font-size:12px;">
-          <option value="bird">Bird Skin</option>
-          <option value="pipe">Pipe</option>
-          <option value="bg">Background</option>
-          <option value="trail">Trail</option>
-        </select>
-        <input id="trade-want-id" placeholder="item name to request" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:6px;border-radius:6px;font-family:inherit;font-size:12px;"/>
-      </div>
-    </div>
-    <input id="trade-to-user" placeholder="player username to send offer to" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:8px 10px;border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px;"/>
-    <button class="btn-p" onclick="sendTradeOffer()" style="margin-bottom:10px;">📤 send trade offer</button>
-    ${pendingTrade?`<div style="background:rgba(94,200,245,.1);border:1px solid #5ec8f5;border-radius:10px;padding:12px;margin-top:8px;">
-      <div style="font-size:13px;font-weight:700;color:#5ec8f5;margin-bottom:6px;">📥 incoming trade from ${pendingTrade.from}</div>
-      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-bottom:10px;">
-        They offer: <strong>${pendingTrade.offerId}</strong> (${pendingTrade.offerType})<br>
-        They want: <strong>${pendingTrade.wantId}</strong> (${pendingTrade.wantType})
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn-p" onclick="respondTrade(true)" style="flex:1;background:#5dcaa5;color:#000;">✓ accept</button>
-        <button class="btn-s" onclick="respondTrade(false)" style="flex:1;">✗ decline</button>
-      </div>
-    </div>`:'<div class="empty" style="font-size:11px;">no pending trades</div>'}
-  `;
-  updateTradeOffer();updateTradeWant();
+  const inv=currentUser.inventory||{};
+  const ICONS={bird:'🐦',pipe:'🎋',bg:'🌄',trail:'✨'};
+  const pending=pendingTrade;
+  let html='';
+
+  // Incoming trade banner
+  if(pending){
+    html+='<div style="background:rgba(94,200,245,.12);border:2px solid #5ec8f5;border-radius:12px;padding:14px;margin-bottom:14px;">';
+    html+='<div style="font-size:14px;font-weight:700;color:#5ec8f5;margin-bottom:8px;">📥 Trade offer from '+pending.from+'</div>';
+    html+='<div style="font-size:13px;color:rgba(255,255,255,.8);margin-bottom:4px;">They offer: <strong style="color:#fac775;">'+pending.offerId.replace(/_/g,' ')+'</strong> ('+ICONS[pending.offerType]+' '+pending.offerType+')</div>';
+    html+='<div style="font-size:13px;color:rgba(255,255,255,.8);margin-bottom:12px;">They want: <strong style="color:#fac775;">'+pending.wantId.replace(/_/g,' ')+'</strong> ('+ICONS[pending.wantType]+' '+pending.wantType+')</div>';
+    html+='<div style="display:flex;gap:8px;"><button onclick="respondTrade(true)" style="flex:1;padding:10px;background:#5dcaa5;color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">✓ Accept</button><button onclick="respondTrade(false)" style="flex:1;padding:10px;background:rgba(226,75,74,.25);color:#e24b4a;border:1px solid #e24b4a;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">✗ Decline</button></div>';
+    html+='</div>';
+  }
+
+  html+='<div class="slabel">🔄 send a trade offer</div>';
+  html+='<div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:10px;">Pick what you're offering, then what you want, then who to send it to.</div>';
+
+  // Step 1: What you offer
+  html+='<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;">1. what you're offering</div>';
+  html+='<div style="display:flex;gap:5px;margin-bottom:8px;">';
+  ['bird','pipe','bg','trail'].forEach(t=>{
+    const sel=tradeOffer.offerType===t;
+    html+='<button onclick="setTradeOfferType(''+t+'')" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(94,200,245,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
+  });
+  html+='</div>';
+  const offerItems=tradeOffer.offerType==='bird'?getAllOwnedBirds():tradeOffer.offerType==='pipe'?(inv.pipes||[]):tradeOffer.offerType==='bg'?(inv.bgs||[]):(inv.trails||[]);
+  html+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">';
+  offerItems.forEach(id=>{
+    const sel=tradeOffer.offerId===id;
+    html+='<div onclick="tradeOffer.offerId=''+id+'';renderTrade(document.getElementById('hub-body'))" style="padding:5px 9px;border-radius:6px;cursor:pointer;font-size:11px;border:1px solid '+(sel?'#5ec8f5':'rgba(255,255,255,.15)')+';background:'+(sel?'rgba(94,200,245,.15)':'rgba(255,255,255,.05)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.7)')+';">'+id.replace(/_/g,' ')+'</div>';
+  });
+  html+='</div>';
+
+  // Step 2: What you want
+  html+='<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;">2. what you want in return</div>';
+  html+='<div style="display:flex;gap:5px;margin-bottom:8px;">';
+  ['bird','pipe','bg','trail'].forEach(t=>{
+    const sel=tradeOffer.wantType===t;
+    html+='<button onclick="setTradeWantType(''+t+'')" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(250,199,117,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#fac775':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
+  });
+  html+='</div>';
+  html+='<input id="trade-want-id" placeholder="type item name (e.g. phoenix, void, neon)" value="'+(tradeOffer.wantId||'')+'" oninput="tradeOffer.wantId=this.value" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#fff;padding:7px 10px;border-radius:7px;font-family:inherit;font-size:12px;margin-bottom:12px;"/>';
+
+  // Step 3: Who to send to
+  html+='<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;">3. player username</div>';
+  html+='<input id="trade-to-user" placeholder="enter their exact username" value="'+(tradeOffer.toUser||'')+'" oninput="tradeOffer.toUser=this.value" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#fff;padding:7px 10px;border-radius:7px;font-family:inherit;font-size:12px;margin-bottom:12px;"/>';
+
+  html+='<button onclick="sendTradeOffer()" style="width:100%;padding:10px;background:#5ec8f5;color:#06131a;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">📤 send trade offer</button>';
+  el.innerHTML=html;
 }
 
-function updateTradeOffer(){
-  const type=document.getElementById('trade-offer-type')?.value;if(!type)return;
-  const inv=currentUser?.inventory||{};
-  const items=type==='bird'?getAllOwnedBirds():type==='pipe'?(inv.pipes||['bamboo']):type==='bg'?(inv.bgs||['sky']):(inv.trails||[]);
-  const sel=document.getElementById('trade-offer-id');if(!sel)return;
-  sel.innerHTML=items.map(id=>'<option value="'+id+'">'+id.replace(/_/g,' ')+'</option>').join('');
-}
-function updateTradeWant(){} // free-text input
+function setTradeOfferType(t){tradeOffer.offerType=t;tradeOffer.offerId=null;renderTrade(document.getElementById('hub-body'));}
+function setTradeWantType(t){tradeOffer.wantType=t;renderTrade(document.getElementById('hub-body'));}
 
 async function sendTradeOffer(){
-  const offerType=document.getElementById('trade-offer-type')?.value;
-  const offerId=document.getElementById('trade-offer-id')?.value;
-  const wantType=document.getElementById('trade-want-type')?.value;
-  const wantId=document.getElementById('trade-want-id')?.value?.trim();
-  const toUser=document.getElementById('trade-to-user')?.value?.trim();
-  if(!offerId||!wantId||!toUser){alert('fill in all fields');return;}
-  socket.emit('trade_offer',{token:authToken,from:currentUser.username,to:toUser,offerType,offerId,wantType,wantId});
-  coinPopups.push({x:W/2,y:H/2,text:'Trade offer sent!',life:1.5,vy:-1.5,big:true});
+  const toUser=(document.getElementById('trade-to-user')?.value||tradeOffer.toUser||'').trim();
+  const wantId=(document.getElementById('trade-want-id')?.value||tradeOffer.wantId||'').trim();
+  if(!tradeOffer.offerId){alert('select what you're offering');return;}
+  if(!wantId){alert('type what you want in return');return;}
+  if(!toUser){alert('enter the player username');return;}
+  if(toUser.toLowerCase()===currentUser.username.toLowerCase()){alert('you can't trade with yourself!');return;}
+  tradeOffer.toUser=toUser;tradeOffer.wantId=wantId;
+  socket.emit('trade_offer',{token:authToken,from:currentUser.username,to:toUser,offerType:tradeOffer.offerType,offerId:tradeOffer.offerId,wantType:tradeOffer.wantType,wantId:wantId});
+  coinPopups.push({x:W/2,y:H*.3,text:'📤 Sent to '+toUser+'!',life:2,vy:-1,big:true});
+  // Note: server queues the trade if player is offline
+  tradeOffer={offerType:'bird',offerId:null,wantType:'bird',wantId:null,toUser:''};
+  renderTrade(document.getElementById('hub-body'));
 }
 
 async function respondTrade(accept){
@@ -1026,12 +1091,33 @@ function drawGround(){
   for(let i=0;i<10;i++){ctx.fillStyle='rgba(0,0,0,.12)';ctx.beginPath();ctx.arc((i*97)%W+8,gy+25+(i*9)%20,2.5,0,Math.PI*2);ctx.fill();}
 }
 function drawPipe(x,topH,gap,pipe){
-  const botY=topH+gap,capH=Math.round(H*.037),capW=PIPE_W+9,ox=(capW-PIPE_W)/2;
-  ctx.fillStyle=pipe.light;ctx.fillRect(x,0,PIPE_W,topH);ctx.fillRect(x,botY,PIPE_W,H-GROUND_H-botY);
+  const botY=topH+gap;
+  const capH=Math.round(H*.028); // height of cap band
+  const capW=PIPE_W+10;          // cap is slightly wider than shaft
+  const ox=(capW-PIPE_W)/2;      // overhang on each side
+
+  // ── Top pipe ──
+  // Shaft (from top of screen down to cap)
+  ctx.fillStyle=pipe.light;
+  if(topH-capH>0)ctx.fillRect(x,0,PIPE_W,topH-capH);
+  // Cap (wider band at open end)
   ctx.fillStyle=pipe.dark;
-  ctx.beginPath();ctx.roundRect(x-ox,topH-capH,capW,capH,[0,0,5,5]);ctx.fill();
-  ctx.beginPath();ctx.roundRect(x-ox,botY,capW,capH,[5,5,0,0]);ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.09)';ctx.fillRect(x+4,0,9,topH);ctx.fillRect(x+4,botY,9,H-GROUND_H-botY);
+  ctx.fillRect(x-ox,topH-capH,capW,capH);
+  // Highlight stripe on shaft
+  ctx.fillStyle='rgba(255,255,255,.12)';
+  if(topH-capH>0)ctx.fillRect(x+4,0,7,topH-capH);
+
+  // ── Bottom pipe ──
+  // Cap at top of bottom pipe
+  ctx.fillStyle=pipe.dark;
+  ctx.fillRect(x-ox,botY,capW,capH);
+  // Shaft going down
+  ctx.fillStyle=pipe.light;
+  const shaftBot=H-GROUND_H;
+  if(botY+capH<shaftBot)ctx.fillRect(x,botY+capH,PIPE_W,shaftBot-botY-capH);
+  // Highlight stripe
+  ctx.fillStyle='rgba(255,255,255,.12)';
+  if(botY+capH<shaftBot)ctx.fillRect(x+4,botY+capH,7,shaftBot-botY-capH);
 }
 function drawBirdAt(bx,by,angle,wb,skin,alpha){
   const r=BIRD_R;ctx.save();if(alpha!==undefined)ctx.globalAlpha=alpha;
@@ -1082,7 +1168,7 @@ function drawTrail(bx,by,trailId){
 function initMenuScene(){
   menuBirds=[];for(let i=0;i<4;i++)menuBirds.push({x:Math.random()*W,y:H*.08+Math.random()*H*.55,vy:(Math.random()-.5)*1.5,vx:1+Math.random()*1.8,frame:Math.random()*100,skin:BIRD_SKINS[Math.floor(Math.random()*BIRD_SKINS.length)]});
   menuObjects=[];for(let i=0;i<5;i++)menuObjects.push({type:'coin',x:Math.random()*W,y:Math.random()*H*.8,vy:-.4-.2*Math.random(),life:Math.random()});
-  for(let i=0;i<2;i++)menuObjects.push({type:Math.random()>.5?'plane':'ufo',x:-120,y:H*.05+Math.random()*H*.25,speed:1.5+Math.random()*1.5});
+
 }
 
 function menuLoop(){
@@ -1102,7 +1188,7 @@ function menuLoop(){
   // Objects
   menuObjects.forEach(o=>{
     if(o.type==='coin'){o.y+=o.vy;o.life+=.007;if(o.y<-20||o.life>1){o.x=Math.random()*W;o.y=H*.88;o.life=0;}ctx.save();ctx.globalAlpha=Math.sin(o.life*Math.PI)*.65;ctx.font='bold '+Math.round(H*.025)+'px sans-serif';ctx.textAlign='center';ctx.fillText('🪙',o.x,o.y);ctx.restore();}
-    else if(o.type==='plane'||o.type==='ufo'){o.x+=o.speed;if(o.x>W+150)o.x=-120;ctx.save();ctx.font='bold '+Math.round(H*.04)+'px sans-serif';ctx.textAlign='center';ctx.fillText(o.type==='plane'?'✈️':'🛸',o.x,o.y);ctx.restore();}
+
   });
   ctx.fillStyle='rgba(0,0,0,.22)';ctx.fillRect(0,0,W,H);
   // Animated title
@@ -1122,32 +1208,53 @@ function menuLoop(){
 function hubLoop(){
   menuFrame++;
   const eq=getEquipped();
-  if(eq.bg&&eq.bg.draw){try{eq.bg.draw(menuFrame);}catch(e){ctx.fillStyle='#0d1b2a';ctx.fillRect(0,0,W,H);}}
-  else{ctx.fillStyle='#0d1b2a';ctx.fillRect(0,0,W,H);}
+  ctx.fillStyle='#0a0d1a';ctx.fillRect(0,0,W,H);
+  if(eq.bg&&eq.bg.draw){try{eq.bg.draw(menuFrame);}catch(e){drawGradSky('#0d1b3e','#1a2f6e',menuFrame);drawStars(menuFrame);}}
+  else{drawGradSky('#0d1b3e','#1a2f6e',menuFrame);drawStars(menuFrame);}
+  ctx.fillStyle='#3a8c28';ctx.fillRect(0,H-GROUND_H,W,GROUND_H);
   drawGround();
   if(!window._hubPipes)window._hubPipes=[];
-  if(menuFrame%95===0)window._hubPipes.push({x:W+10,topH:H*.12+Math.random()*H*.38});
-  window._hubPipes.forEach(p=>p.x-=1.1);
+  if(menuFrame%68===0)window._hubPipes.push({x:W+10,topH:H*.12+Math.random()*H*.38});
+  window._hubPipes.forEach(p=>p.x-=2);
   window._hubPipes=window._hubPipes.filter(p=>p.x+PIPE_W>-20);
   window._hubPipes.forEach(p=>drawPipe(p.x,p.topH,H*.34,eq.pipe));
-  if(!window._hubBirds)window._hubBirds=Array.from({length:2},()=>({x:Math.random()*W,y:H*.25+Math.random()*H*.35,vy:-1,vx:.7+Math.random()*.8,frame:0}));
-  window._hubBirds.forEach(b=>{b.frame++;b.vy+=.11;b.y+=b.vy;b.x+=b.vx;if(b.y>H*.68){b.vy=-4.2;}if(b.x>W+40){b.x=-40;b.y=H*.2+Math.random()*H*.4;}drawBirdAt(b.x,b.y,b.vy*.07,Math.sin(b.frame*.22)*3,eq.bird,0.22);});
-  ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(0,0,W,H);
+  if(!window._hubBirds){window._hubBirds=Array.from({length:4},(_,i)=>({x:Math.random()*W,y:H*.15+Math.random()*H*.5,vy:-2+Math.random(),vx:.8+Math.random()*1.2,frame:i*20,skin:BIRD_SKINS[Math.floor(Math.random()*BIRD_SKINS.length)]}));}
+  window._hubBirds.forEach(b=>{
+    b.frame++;b.vy+=.13;b.y+=b.vy;b.x+=b.vx;
+    if(b.y>H*.68){b.vy=-5-Math.random()*2;b.y=H*.68;}
+    if(b.y<H*.06)b.vy=Math.abs(b.vy)*.5;
+    if(b.x>W+60){b.x=-60;b.y=H*.15+Math.random()*H*.45;b.skin=BIRD_SKINS[Math.floor(Math.random()*BIRD_SKINS.length)];}
+    drawBirdAt(b.x,b.y,b.vy*.07,Math.sin(b.frame*.22)*4,b.skin,0.6);
+  });
+  if(!window._hubCoins)window._hubCoins=Array.from({length:8},()=>({x:Math.random()*W,y:H*.5+Math.random()*H*.3,vy:-.5-.3*Math.random(),life:Math.random()}));
+  window._hubCoins.forEach(coin=>{
+    coin.y+=coin.vy;coin.life+=.005;
+    if(coin.y<H*.08||coin.life>1){coin.x=Math.random()*W;coin.y=H*.85+Math.random()*H*.1;coin.life=0;}
+    ctx.save();ctx.globalAlpha=Math.sin(coin.life*Math.PI)*.65;
+    ctx.font=Math.round(H*.025)+'px sans-serif';ctx.textAlign='center';ctx.fillText('🪙',coin.x,coin.y);ctx.restore();
+  });
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(0,0,W,H);
 }
+
 function gameLoop(){
   menuFrame++;frame++;
   const eq=getEquipped();
   const d=gameMode==='ranked'?DIFFS.normal:gameMode==='daily'?DIFFS[activeDailyDiff]:DIFFS[chosenDiff];
-  // Clear full canvas first
-  ctx.clearRect(0,0,W,H);
-  // Draw sky background (clips to H-GROUND_H automatically)
+  // Clear + base fill to prevent any green leaking through
+  ctx.fillStyle='#111';ctx.fillRect(0,0,W,H);
+  // Draw sky background
   if(eq.bg&&eq.bg.draw){try{eq.bg.draw(menuFrame);}catch(e){drawGradSky('#87CEEB','#E0F4FF',menuFrame);}}
   else{drawGradSky('#87CEEB','#E0F4FF',menuFrame);}
+  // Safety: fill ground area solid before drawGround() to prevent bg bleed
+  ctx.fillStyle='#3a8c28';ctx.fillRect(0,H-GROUND_H,W,GROUND_H);
 
-  // Background objects
-  if(frame%200===0)menuObjects.push({type:Math.random()>.4?'plane':'ufo',x:-120,y:H*.03+Math.random()*H*.15,speed:2+Math.random()*2});
+  // UFOs only for space-themed backgrounds
+  const bgId=eq.bg?.id||'sky';
+  if(frame%300===0&&(bgId==='cosmic'||bgId==='neon_city')){
+    menuObjects.push({type:'ufo',x:-120,y:H*.04+Math.random()*H*.15,speed:1.5+Math.random()});
+  }
   menuObjects=menuObjects.filter(o=>o.x<W+200);
-  menuObjects.forEach(o=>{if(o.type==='plane'||o.type==='ufo'){o.x+=o.speed;ctx.save();ctx.font='bold '+Math.round(H*.032)+'px sans-serif';ctx.textAlign='center';ctx.globalAlpha=.4;ctx.fillText(o.type==='plane'?'✈️':'🛸',o.x,o.y);ctx.restore();}});
+  menuObjects.forEach(o=>{if(o.type==='ufo'){o.x+=o.speed;ctx.save();ctx.font='bold '+Math.round(H*.028)+'px sans-serif';ctx.textAlign='center';ctx.globalAlpha=.3;ctx.fillText('🛸',o.x,o.y);ctx.restore();}});
 
   // Cutscene — cinematic fly-in with bars
   if(cutsceneActive){
@@ -1194,11 +1301,14 @@ function gameLoop(){
     if(frame%d.freq===0)spawnPipe();
     pipes.forEach(p=>p.x-=d.speed*speedMult);
     pipes=pipes.filter(p=>p.x+PIPE_W>0);
-    // Spawn powerup every ~15 pipes, only if none active and hard mode (or any mode)
-    if(frame%Math.round(d.freq*15)===0&&!activePowerup&&powerups.length===0){
+    // Spawn powerup in the GAP of a recent pipe, so it never overlaps a pipe
+    if(frame%Math.round(d.freq*12)===0&&!activePowerup&&powerups.length===0&&pipes.length>0){
       const pt=POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
-      const topH=H*.2+Math.random()*H*.4;
-      powerups.push({x:W+60,y:topH,type:pt,collected:false});
+      // Find the last spawned pipe and place powerup in its gap
+      const refPipe=pipes[pipes.length-1];
+      const gapMid=refPipe.topH+d.gap/2; // vertical center of gap
+      // Spawn ahead of the pipe so player has time to react
+      powerups.push({x:refPipe.x+W*.4,y:gapMid,type:pt,collected:false});
     }
     // Move and draw powerups
     powerups.forEach(pw=>{
@@ -1235,7 +1345,15 @@ function gameLoop(){
         score+=pts;
         const sc=document.getElementById('hud-score');if(sc)sc.textContent=score;
         if(score>sessionBest){sessionBest=score;const hb=document.getElementById('hud-best');if(hb)hb.textContent=sessionBest;}
-        if(currentUser){currentUser.coins=(currentUser.coins||0)+pts;const cd=document.getElementById('hud-coins-disp');if(cd)cd.textContent=currentUser.coins;coinPopups.push({x:p.x+PIPE_W/2,y:H*.38,text:activePowerup==='double'?'+2':'+1',life:1,vy:-1.8});const xpEl=document.getElementById('hud-xp');if(xpEl)xpEl.textContent='+'+score*2+' xp';}
+        if(currentUser){
+          const coinMult=activePowerup==='double'?2:1;
+          const diffCoins=chosenDiff==='hard'?3:chosenDiff==='normal'?2:1;
+          const coinsEarned=diffCoins*coinMult;
+          currentUser.coins=(currentUser.coins||0)+coinsEarned;
+          const cd=document.getElementById('hud-coins-disp');if(cd)cd.textContent=currentUser.coins;
+          coinPopups.push({x:p.x+PIPE_W/2,y:H*.38,text:'+'+coinsEarned,life:1,vy:-1.8});
+          const xpEl=document.getElementById('hud-xp');if(xpEl)xpEl.textContent='+'+score*2+' xp';
+        }
         if(matchId)socket.emit('score_update',{matchId,score});
         playPoint();
       }
@@ -1339,6 +1457,19 @@ async function loadMenuLb(){
     ['click','keydown','touchstart'].forEach(e=>document.removeEventListener(e,_sm));
   };
   ['click','keydown','touchstart'].forEach(e=>document.addEventListener(e,_sm));
-  if(authToken){const data=await apiFetch('/api/me');if(data.user){currentUser=data.user;socket.emit('set_identity',{token:authToken});goHub();}else{authToken=null;localStorage.removeItem('fm_token');}}
+  // Check saved token — show "continue" option on menu instead of auto-login
+  if(authToken){
+    const data=await apiFetch('/api/me');
+    if(data.user){
+      window._savedUser=data.user;
+      // Show continue button on menu
+      const cont=document.getElementById('continue-btn');
+      const contName=document.getElementById('continue-name');
+      if(cont&&contName){
+        contName.textContent=data.user.username;
+        cont.style.display='block';
+      }
+    } else {authToken=null;localStorage.removeItem('fm_token');}
+  }
   loadMenuLb();requestAnimationFrame(mainLoop);
 })();
