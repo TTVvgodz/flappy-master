@@ -1030,9 +1030,16 @@ function flap(){
   else if(gState==='playing'){bird.vy=JUMP;playFlap();}
   else if(gState==='dead'&&!deadBird&&!matchId){resetGame();}
 }
-canvas.addEventListener('click',flap);
-canvas.addEventListener('touchstart',e=>{e.preventDefault();flap();},{passive:false});
-document.addEventListener('keydown',e=>{if(e.code==='Space'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();flap();}});
+canvas.addEventListener('click',(e)=>{
+  // Only intercept canvas clicks when in game — let panel buttons work normally
+  if(!isGameScreen&&!document.querySelector('.panel.active'))return;
+  if(isGameScreen)flap();
+});
+canvas.addEventListener('touchstart',(e)=>{
+  // Only prevent default (and flap) when actively playing — otherwise let touches reach buttons
+  if(isGameScreen){e.preventDefault();flap();}
+},{passive:false});
+document.addEventListener('keydown',e=>{if(e.code==='Space'&&document.activeElement.tagName!=='INPUT'&&isGameScreen){e.preventDefault();flap();}});
 
 let dailyRandState=0;
 function dailyRand(){dailyRandState=(dailyRandState*9301+49297)%233280;return dailyRandState/233280;}
@@ -1173,6 +1180,7 @@ function initMenuScene(){
 
 function menuLoop(){
   menuFrame++;
+  ctx.fillStyle='#0a0d1a';ctx.fillRect(0,0,W,H); // base clear
   // Use sky BG with unique art
   drawGradSky('#0d1b3e','#1a2f6e',menuFrame);
   drawStars(menuFrame);
@@ -1433,10 +1441,10 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 function mainLoop(){
-  if(!_tabHidden||!isGameScreen){
-    if(isGameScreen)gameLoop();
-    else if(document.getElementById('hub').classList.contains('active'))hubLoop();
-    else menuLoop();
+  if(!_tabHidden){
+    if(isGameScreen){gameLoop();}
+    else if(document.getElementById('hub').classList.contains('active')){hubLoop();}
+    else{menuLoop();} // always runs on menu screen, even when panels are open
   }
   requestAnimationFrame(mainLoop);
 }
@@ -1450,6 +1458,7 @@ async function loadMenuLb(){
 
 (async function init(){
   initMenuScene();resetGame();gState='idle';
+  showPanel('panel-menu'); // always show menu panel on start
   document.getElementById('music-track').textContent=TRACKS[0].name;
   // Auto-play on any first interaction
   const _sm=()=>{
