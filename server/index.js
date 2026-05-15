@@ -322,32 +322,42 @@ io.on('connection', (socket) => {
     socket.to(matchId).emit('opponent_score', { score, combo });
   });
 
-  socket.on('match_died', ({ matchId, finalScore, maxCombo }) => {
+  socket.on('match_died', ({ matchId, finalScore, maxCombo, survived }) => {
     const m = matches[matchId]; if (!m) return;
-    m.scores[socket.id] = finalScore;
-    m.maxCombos[socket.id] = maxCombo;
-    const allDead = m.players.every(p => m.scores[p.socketId] !== undefined);
-    if (allDead) {
+
+    // Record who died and when
+    if (!m.deaths) m.deaths = [];
+    m.deaths.push({ socketId: socket.id, finalScore: finalScore||0, maxCombo: maxCombo||1 });
+    m.scores[socket.id] = finalScore||0;
+
+    // Notify opponent that this player died
+    socket.to(matchId).emit('opponent_died', { score: finalScore });
+
+    // If first to die → opponent wins immediately (survival mode)
+    if (m.deaths.length === 1) {
+      // Give opponent 3 seconds to keep playing, then end match
+      // Actually end immediately: first death = loss
       const [p1, p2] = m.players;
-      const s1 = m.scores[p1.socketId]||0, s2 = m.scores[p2.socketId]||0;
-      const winner = s1>s2?p1:s2>s1?p2:null;
-      io.to(matchId).emit('match_over', {
-        player1:{ username:p1.username, score:s1, maxCombo:m.maxCombos[p1.socketId]||1 },
-        player2:{ username:p2.username, score:s2, maxCombo:m.maxCombos[p2.socketId]||1 },
-        winner: winner?.username||null, draw: !winner,
-      });
-      // Update rank pts
-      if (winner) {
-        const wKey = winner.username.toLowerCase();
-        if (db.users[wKey]) { db.users[wKey].rank_pts = (db.users[wKey].rank_pts||0) + 20; }
-        const loser = winner===p1?p2:p1;
-        const lKey = loser.username.toLowerCase();
-        if (db.users[lKey]) { db.users[lKey].rank_pts = Math.max(0,(db.users[lKey].rank_pts||0)-5); }
-        saveData(db);
-      }
+      const loserSocketId = socket.id;
+      const winner = loserSocketId === p1.socketId ? p2 : p1;
+      const loser  = loserSocketId === p1.socketId ? p1 : p2;
+
+      const result = {
+        player1: { username: p1.username, score: m.scores[p1.socketId]||0 },
+        player2: { username: p2.username, score: m.scores[p2.socketId]||0 },
+        winner: winner.username,
+        draw: false,
+        mode: 'survival',
+      };
+      io.to(matchId).emit('match_over', result);
+
+      // Award rank pts: winner +20, loser -5
+      const wKey = winner.username.toLowerCase();
+      const lKey = loser.username.toLowerCase();
+      if (db.users[wKey]) { db.users[wKey].rank_pts = (db.users[wKey].rank_pts||0) + 20; }
+      if (db.users[lKey]) { db.users[lKey].rank_pts = Math.max(0,(db.users[lKey].rank_pts||0) - 5); }
+      saveData(db);
       delete matches[matchId];
-    } else {
-      socket.to(matchId).emit('opponent_died', { score: finalScore });
     }
   });
 

@@ -2,154 +2,214 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
   <title>Flappy Master</title>
-  <link rel="stylesheet" href="css/style.css"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>🐦</text></svg>"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+    #c{display:block;width:100vw;height:100vh;cursor:pointer;touch-action:none;}
+    .panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(8,10,18,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:26px 26px 22px;width:330px;display:none;flex-direction:column;gap:9px;backdrop-filter:blur(16px);z-index:100;}
+    .panel.active{display:flex;}
+    .panel-title{font-size:21px;font-weight:700;color:#fff;text-align:center;margin-bottom:2px;}
+    .panel-sub{font-size:12px;color:rgba(255,255,255,0.45);text-align:center;margin-top:-4px;}
+    label{font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.5px;margin-bottom:-4px;}
+    input[type=text],input[type=password]{width:100%;padding:10px 12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font-size:14px;outline:none;font-family:inherit;}
+    input:focus{border-color:#5ec8f5;}
+    .pw-wrap{position:relative;}.pw-wrap input{padding-right:36px;}
+    .pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;opacity:.5;}
+    .pw-eye:hover{opacity:1;}
+    .sw{height:3px;background:rgba(255,255,255,0.1);border-radius:2px;}
+    .sb{height:3px;border-radius:2px;transition:width .3s,background .3s;width:0%;}
+    .sh{font-size:10px;color:rgba(255,255,255,0.3);}
+    .btn-p{width:100%;padding:11px;background:#5ec8f5;color:#06131a;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s;}
+    .btn-p:hover{opacity:.88;}.btn-p:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-s{width:100%;padding:10px;background:transparent;border:1px solid rgba(255,255,255,0.18);border-radius:8px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit;transition:background .15s;}
+    .btn-s:hover{background:rgba(255,255,255,0.06);}
+    .btn-lk{background:none;border:none;color:rgba(255,255,255,0.4);font-size:12px;cursor:pointer;font-family:inherit;text-align:center;}
+    .btn-lk:hover{color:#fff;}
+    .divider{display:flex;align-items:center;gap:8px;}.divider hr{flex:1;border:none;border-top:1px solid rgba(255,255,255,0.1);}.divider span{font-size:11px;color:rgba(255,255,255,0.3);}
+    .err{font-size:12px;color:#e24b4a;min-height:16px;text-align:center;}
+    /* HUD */
+    #hud{position:fixed;top:0;left:0;width:100%;z-index:50;display:none;pointer-events:none;}
+    #hud.active{display:block;}
+    #hud-top{display:flex;align-items:center;gap:10px;padding:12px 18px;}
+    .hud-av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;}
+    #hud-name{font-size:13px;font-weight:700;color:#fff;flex:1;text-shadow:0 1px 6px rgba(0,0,0,.9);}
+    .hud-chip{font-size:12px;font-weight:700;color:#fac775;text-shadow:0 1px 4px rgba(0,0,0,.8);}
+    #hud-menu-btn{pointer-events:all;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-size:12px;padding:5px 12px;cursor:pointer;font-family:inherit;}
+    #hud-bottom{position:fixed;bottom:0;left:0;width:100%;z-index:50;display:none;padding:14px 18px;}
+    #hud-bottom.active{display:flex;align-items:center;gap:10px;}
+    .hud-metric{background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px 14px;text-align:center;}
+    .hud-ml{font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;}
+    .hud-mv{font-size:18px;font-weight:700;color:#fff;}
+    #save-btn{pointer-events:all;background:rgba(94,200,245,0.9);border:none;border-radius:8px;color:#06131a;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:auto;display:none;}
+    /* VS */
+    #vs-ov{position:fixed;top:14px;right:18px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:10px 16px;display:none;min-width:160px;z-index:60;}
+    #vs-ov.active{display:block;}
+    .vs-title{font-size:10px;color:rgba(255,255,255,0.45);text-align:center;margin-bottom:6px;}
+    .vs-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#fff;font-weight:700;margin-bottom:4px;gap:12px;}
+    .vs-alive{color:#5dcaa5;font-size:11px;}.vs-dead{color:#e24b4a;font-size:11px;}
+    #vs-status{font-size:11px;color:#fac775;text-align:center;margin-top:4px;}
+    /* Hub */
+    #hub{position:fixed;top:0;left:0;width:100%;height:100%;z-index:80;display:none;flex-direction:column;background:rgba(0,0,0,0.88);backdrop-filter:blur(4px);}
+    #hub.active{display:flex;}
+    #hub-bar{display:flex;align-items:center;gap:10px;padding:12px 20px;background:rgba(0,0,0,0.6);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;}
+    .hub-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
+    #hub-uname{font-size:14px;font-weight:700;color:#fff;}
+    .rank-pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
+    .coin-pill{font-size:11px;font-weight:700;color:#fac775;}
+    #hub-out{margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:rgba(255,255,255,0.5);font-size:11px;padding:4px 10px;cursor:pointer;font-family:inherit;}
+    #hub-nav{display:flex;background:rgba(0,0,0,0.4);border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;}
+    .hnb{flex:1;padding:11px 4px;font-size:11px;background:none;border:none;color:rgba(255,255,255,0.45);cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;transition:all .15s;}
+    .hnb.active{color:#5ec8f5;border-bottom-color:#5ec8f5;font-weight:700;}
+    #hub-body{flex:1;overflow-y:auto;padding:16px 20px;}
+    #hub-body::-webkit-scrollbar{width:4px;}#hub-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px;}
+    /* shop */
+    .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+    .si{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px 5px;text-align:center;cursor:pointer;transition:all .15s;}
+    .si:hover{background:rgba(255,255,255,0.09);}
+    .si.owned{border-color:#5dcaa5;background:rgba(93,202,165,0.08);}
+    .si.equipped{border-color:#5ec8f5;background:rgba(94,200,245,0.1);border-width:2px;}
+    .si canvas{display:block;margin:0 auto 4px;border-radius:4px;}
+    .sin{font-size:10px;font-weight:700;color:#fff;}.sip{font-size:9px;color:rgba(255,255,255,0.4);}
+    .slabel{font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;margin-top:2px;}
+    .stimer{font-size:10px;color:rgba(255,255,255,0.3);text-align:right;margin-bottom:8px;}
+    /* lb */
+    .lbr{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.07);font-size:13px;color:#fff;}
+    .lbr:last-child{border-bottom:none;}
+    .lbrank{font-size:10px;font-weight:700;min-width:20px;color:rgba(255,255,255,0.3);}
+    .lbrank.g{color:#fac775;}.lbrank.s{color:#aaa;}.lbrank.b{color:#cd7f32;}
+    .lbav{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;}
+    .lbn{flex:1;}.lbyou{font-size:9px;background:rgba(94,200,245,.15);color:#5ec8f5;border-radius:3px;padding:1px 4px;}
+    .lbp{font-weight:700;}
+    .empty{color:rgba(255,255,255,0.25);font-size:13px;text-align:center;padding:20px 0;}
+    /* diff */
+    .drow{display:flex;gap:6px;margin-bottom:8px;}
+    .dbtn{flex:1;padding:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;}
+    .dbtn.sel{border-color:#5ec8f5;background:rgba(94,200,245,.1);color:#5ec8f5;font-weight:700;}
+    /* rank bar */
+    .rbw{height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin:5px 0;}
+    .rbb{height:4px;border-radius:2px;}
+    /* hist */
+    .hi{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.07);}
+    .hi:last-child{border-bottom:none;}
+    .htag{font-size:9px;padding:2px 5px;border-radius:3px;font-weight:700;}
+    .tag-easy{background:rgba(93,202,165,.2);color:#5dcaa5;}
+    .tag-normal{background:rgba(94,200,245,.15);color:#5ec8f5;}
+    .tag-hard{background:rgba(226,75,74,.2);color:#e24b4a;}
+    .tag-ranked{background:rgba(250,199,117,.15);color:#fac775;}
+    .tag-daily{background:rgba(175,169,236,.2);color:#afa9ec;}
+    .rli{display:flex;align-items:center;gap:10px;padding:4px 0;}
+    .rld{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+    /* mm */
+    #mm-panel{text-align:center;padding:10px 0;}
+    #mm-cd{font-size:72px;font-weight:900;color:#5ec8f5;line-height:1;display:none;}
+    /* metrics row in hub */
+    .mrow{display:flex;gap:8px;margin-bottom:12px;}
+    .met{flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 10px;}
+    .metl{font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;}
+    .metv{font-size:18px;font-weight:700;color:#fff;}
+  </style>
 </head>
 <body>
-  <div id="app">
-    <div id="game-side">
-      <canvas id="c" width="340" height="480"></canvas>
-      <div id="hint">tap or press space to flap</div>
-    </div>
-    <div id="panel">
+<canvas id="c"></canvas>
 
-      <!-- MENU -->
-      <div id="screen-menu" class="screen active">
-        <div class="card">
-          <div class="card-title logo">🐦 Flappy Master</div>
-          <button class="btn-p" onclick="showScreen('screen-register')">create account</button>
-          <button class="btn-g" onclick="showScreen('screen-login')">log in</button>
-          <div class="divider"><hr><span>or</span><hr></div>
-          <button class="btn-g" onclick="playAsGuest()">play as guest</button>
-        </div>
-        <div class="card" id="global-preview">
-          <div class="card-title">🏆 top scores</div>
-          <div id="menu-lb"></div>
-        </div>
-      </div>
+<!-- AUTH PANELS -->
+<div class="panel active" id="panel-menu">
+  <div class="panel-title">🐦 Flappy Master</div>
+  <div class="panel-sub">the ultimate flapping experience</div>
+  <button class="btn-p" onclick="showPanel('panel-register')">create account</button>
+  <button class="btn-s" onclick="showPanel('panel-login')">log in</button>
+  <div class="divider"><hr><span>or</span><hr></div>
+  <button class="btn-s" onclick="playAsGuest()">play as guest</button>
+  <div id="menu-lb" style="margin-top:6px;"></div>
+</div>
 
-      <!-- REGISTER -->
-      <div id="screen-register" class="screen">
-        <div class="card">
-          <div class="card-title">create account</div>
-          <div class="field"><label>username</label><input type="text" id="reg-name" placeholder="pick a username" maxlength="18"/></div>
-          <div class="field">
-            <label>password</label>
-            <div class="pw-wrap">
-              <input type="password" id="reg-pass" placeholder="min 12 characters" oninput="updateStrength()"/>
-              <button class="pw-eye" onclick="togglePw('reg-pass',this)" type="button">👁</button>
-            </div>
-            <div class="pw-strength-wrap"><div id="strength-bar" class="pw-strength-bar"></div></div>
-            <div class="pw-hint" id="strength-label">enter a password</div>
-          </div>
-          <div class="field">
-            <label>confirm password</label>
-            <div class="pw-wrap">
-              <input type="password" id="reg-pass2" placeholder="repeat password"/>
-              <button class="pw-eye" onclick="togglePw('reg-pass2',this)" type="button">👁</button>
-            </div>
-          </div>
-          <div class="err" id="reg-err"></div>
-          <button class="btn-p" onclick="doRegister()">create account</button>
-          <div class="back-row"><button class="btn-lk" onclick="showScreen('screen-menu')">← back</button></div>
-        </div>
-      </div>
+<div class="panel" id="panel-register">
+  <div class="panel-title">create account</div>
+  <label>username</label>
+  <input type="text" id="reg-name" placeholder="pick a username" maxlength="18"/>
+  <label>password</label>
+  <div class="pw-wrap"><input type="password" id="reg-pass" placeholder="min 12 characters" oninput="updateStrength()"/><button class="pw-eye" onclick="togglePw('reg-pass',this)" type="button">👁</button></div>
+  <div class="sw"><div id="strength-bar" class="sb"></div></div>
+  <div class="sh" id="strength-label">enter a password</div>
+  <label>confirm password</label>
+  <div class="pw-wrap"><input type="password" id="reg-pass2" placeholder="repeat password"/><button class="pw-eye" onclick="togglePw('reg-pass2',this)" type="button">👁</button></div>
+  <div class="err" id="reg-err"></div>
+  <button class="btn-p" onclick="doRegister()">create account</button>
+  <button class="btn-lk" onclick="showPanel('panel-menu')">← back</button>
+</div>
 
-      <!-- LOGIN -->
-      <div id="screen-login" class="screen">
-        <div class="card">
-          <div class="card-title">log in</div>
-          <div class="field"><label>username</label><input type="text" id="log-name" placeholder="username"/></div>
-          <div class="field">
-            <label>password</label>
-            <div class="pw-wrap">
-              <input type="password" id="log-pass" placeholder="password"/>
-              <button class="pw-eye" onclick="togglePw('log-pass',this)" type="button">👁</button>
-            </div>
-          </div>
-          <div class="err" id="log-err"></div>
-          <button class="btn-p" onclick="doLogin()">log in</button>
-          <div class="back-row"><button class="btn-lk" onclick="showScreen('screen-menu')">← back</button></div>
-        </div>
-      </div>
+<div class="panel" id="panel-login">
+  <div class="panel-title">log in</div>
+  <label>username</label>
+  <input type="text" id="log-name" placeholder="username"/>
+  <label>password</label>
+  <div class="pw-wrap"><input type="password" id="log-pass" placeholder="password"/><button class="pw-eye" onclick="togglePw('log-pass',this)" type="button">👁</button></div>
+  <div class="err" id="log-err"></div>
+  <button class="btn-p" onclick="doLogin()">log in</button>
+  <button class="btn-lk" onclick="showPanel('panel-menu')">← back</button>
+</div>
 
-      <!-- HUB -->
-      <div id="screen-hub" class="screen">
-        <div class="card hub-header">
-          <div class="user-row">
-            <div class="avatar" id="hub-avatar"></div>
-            <div class="user-info">
-              <div class="user-name" id="hub-name"></div>
-              <div class="user-meta">
-                <span class="rank-badge" id="hub-rank-badge"></span>
-                <span class="coin-chip">🪙 <span id="hub-coins">0</span></span>
-              </div>
-            </div>
-            <button class="btn-lk logout-btn" onclick="doLogout()">out</button>
-          </div>
-          <div class="rank-bar-wrap"><div id="hub-rank-bar" class="rank-bar"></div></div>
-          <div class="rank-progress" id="hub-rank-progress"></div>
-          <nav class="nav-row">
-            <button class="nav-btn" data-section="play" onclick="goSection('play')">▶ play</button>
-            <button class="nav-btn" data-section="ranked" onclick="goSection('ranked')">⚔ ranked</button>
-            <button class="nav-btn" data-section="daily" onclick="goSection('daily')">📅 daily</button>
-            <button class="nav-btn" data-section="shop" onclick="goSection('shop')">🛍 shop</button>
-            <button class="nav-btn" data-section="profile" onclick="goSection('profile')">👤 profile</button>
-          </nav>
-        </div>
-        <div id="hub-section"></div>
-      </div>
-
-      <!-- GAME HUD -->
-      <div id="screen-game" class="screen">
-        <div class="card">
-          <div class="game-hud-top">
-            <div class="avatar sm" id="hud-avatar"></div>
-            <span class="hud-name" id="hud-name"></span>
-            <span class="coin-chip">🪙 <span id="hud-coins">0</span></span>
-            <button class="btn-lk" onclick="exitToHub()">menu</button>
-          </div>
-          <div class="metrics-row">
-            <div class="metric"><div class="metric-label">score</div><div class="metric-val" id="hud-score">0</div></div>
-            <div class="metric"><div class="metric-label">combo</div><div class="metric-val" id="hud-combo">×1</div></div>
-            <div class="metric"><div class="metric-label">best</div><div class="metric-val" id="hud-best">0</div></div>
-          </div>
-          <button class="btn-g save-btn" id="save-btn" onclick="saveScore()" style="display:none;">💾 save score</button>
-        </div>
-
-        <!-- Versus panel shown during live match -->
-        <div class="card" id="versus-panel" style="display:none;">
-          <div class="card-title" id="vs-title">vs <span id="vs-opponent"></span></div>
-          <div class="metrics-row">
-            <div class="metric"><div class="metric-label">you</div><div class="metric-val" id="vs-you">0</div></div>
-            <div class="metric"><div class="metric-label" id="vs-opp-name">opponent</div><div class="metric-val" id="vs-opp">0</div></div>
-          </div>
-          <div id="vs-status" class="vs-status"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">🏆 leaderboard</div>
-          <div id="lb-list"></div>
-        </div>
-      </div>
-
-      <!-- MATCHMAKING -->
-      <div id="screen-matchmaking" class="screen">
-        <div class="card" style="text-align:center;padding:2rem 1rem;">
-          <div style="font-size:32px;margin-bottom:12px;" id="mm-bird-anim">🐦</div>
-          <div class="card-title" style="justify-content:center;" id="mm-title">finding opponent...</div>
-          <div id="mm-status" style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;"></div>
-          <div id="mm-countdown" style="font-size:48px;font-weight:700;color:var(--accent);display:none;"></div>
-          <button class="btn-g" onclick="leaveQueue()" id="mm-cancel-btn">cancel</button>
-        </div>
-      </div>
-
-    </div>
+<div class="panel" id="panel-mm">
+  <div id="mm-panel">
+    <div style="font-size:44px;margin-bottom:10px;" id="mm-icon">🐦</div>
+    <div class="panel-title" id="mm-title">finding opponent...</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.4);margin:6px 0 14px;" id="mm-status"></div>
+    <div id="mm-cd"></div>
+    <button class="btn-s" onclick="leaveQueue()" id="mm-cancel" style="margin-top:14px;">cancel</button>
   </div>
+</div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="js/game.js"></script>
+<!-- HUB (fullscreen) -->
+<div id="hub">
+  <div id="hub-bar">
+    <div class="hub-av" id="hub-av"></div>
+    <div>
+      <div id="hub-uname"></div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:2px;">
+        <span class="rank-pill" id="hub-rpill"></span>
+        <span class="coin-pill">🪙 <span id="hub-coins">0</span></span>
+      </div>
+    </div>
+    <button id="hub-out" onclick="doLogout()">log out</button>
+  </div>
+  <div id="hub-nav">
+    <button class="hnb active" data-s="play" onclick="goSection('play')">▶ play</button>
+    <button class="hnb" data-s="ranked" onclick="goSection('ranked')">⚔ ranked</button>
+    <button class="hnb" data-s="daily" onclick="goSection('daily')">📅 daily</button>
+    <button class="hnb" data-s="shop" onclick="goSection('shop')">🛍 shop</button>
+    <button class="hnb" data-s="profile" onclick="goSection('profile')">👤 me</button>
+  </div>
+  <div id="hub-body"></div>
+</div>
+
+<!-- GAME HUD -->
+<div id="hud">
+  <div id="hud-top">
+    <div class="hud-av" id="hud-av"></div>
+    <div id="hud-name"></div>
+    <span class="hud-chip">🪙 <span id="hud-coins-disp">0</span></span>
+    <button id="hud-menu-btn" onclick="exitToHub()">menu</button>
+  </div>
+</div>
+<div id="hud-bottom">
+  <div class="hud-metric"><div class="hud-ml">score</div><div class="hud-mv" id="hud-score">0</div></div>
+  <div class="hud-metric"><div class="hud-ml">combo</div><div class="hud-mv" id="hud-combo">×1</div></div>
+  <div class="hud-metric"><div class="hud-ml">best</div><div class="hud-mv" id="hud-best">0</div></div>
+  <button id="save-btn" onclick="saveScore()">💾 save</button>
+</div>
+
+<!-- VS overlay -->
+<div id="vs-ov">
+  <div class="vs-title">vs <span id="vs-opp-name"></span></div>
+  <div class="vs-row"><span>you</span><span id="vs-you-s" class="vs-alive">alive</span></div>
+  <div class="vs-row"><span id="vs-opp-label">opponent</span><span id="vs-opp-s" class="vs-alive">alive</span></div>
+  <div id="vs-status"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/game.js"></script>
 </body>
 </html>
