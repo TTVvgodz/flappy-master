@@ -15,7 +15,7 @@ const JWT_SECRET=process.env.JWT_SECRET||'flappy-master-secret-change-in-prod';
 const PORT=process.env.PORT||3000;
 const DATA_FILE=path.join(__dirname,'data.json');
 
-function loadData(){try{if(fs.existsSync(DATA_FILE))return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'));}catch(e){}return{users:{},scores:{easy:[],normal:[],hard:[]},daily:{},history:[],chat:[],pendingTrades:{}};}
+function loadData(){try{if(fs.existsSync(DATA_FILE))return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'));}catch(e){}return{users:{},scores:{easy:[],normal:[],hard:[]},daily:{},history:[],chat:[],pendingTrades:{},market:[],dms:{}};}
 function saveData(d){fs.writeFileSync(DATA_FILE,JSON.stringify(d,null,2));}
 let db=loadData();
 // migrate old flat scores array
@@ -386,7 +386,80 @@ app.post('/api/equip',authMiddleware,(req,res)=>{
   res.json({user:sanitizeUser(user)});
 });
 
+app.post('/api/profile',authMiddleware,(req,res)=>{
+  const{bio,profileColor}=req.body;
+  const key=req.user.username.toLowerCase();
+  const user=db.users[key];if(!user)return res.status(404).json({error:'Not found'});
+  migrateUser(user);
+  if(bio!==undefined)user.bio=String(bio).slice(0,120);
+  if(profileColor)user.profileColor=profileColor;
+  saveData(db);res.json({user:sanitizeUser(user)});
+});
+
 app.get('/api/daily',(req,res)=>res.json({quests:getDailyQuests(),key:todayKey()}));
+// Market
+app.get('/api/market',(req,res)=>{
+  if(!db.market)db.market=[];
+  // Clean expired (7 days)
+  const week=7*24*3600;const now=Math.floor(Date.now()/1000);
+  db.market=db.market.filter(l=>now-l.ts<week);
+  res.json({listings:db.market});
+});
+
+app.post('/api/market/list',authMiddleware,(req,res)=>{
+  const{type,itemId,price}=req.body;
+  const key=req.user.username.toLowerCase();
+  const user=db.users[key];if(!user)return res.status(404).json({error:'Not found'});
+  migrateUser(user);
+  if(!price||price<1)return res.status(400).json({error:'Invalid price'});
+  const inv=type==='bird'?user.inventory.birds:type==='pipe'?user.inventory.pipes:type==='bg'?user.inventory.bgs:user.inventory.trails;
+  if(!inv||!inv.includes(itemId))return res.status(400).json({error:'Item not owned'});
+  // Remove from inventory
+  inv.splice(inv.indexOf(itemId),1);
+  if(!db.market)db.market=[];
+  const id='m'+Date.now()+Math.floor(Math.random()*9999);
+  db.market.push({id,seller:user.username,type,itemId,price,ts:Math.floor(Date.now()/1000)});
+  saveData(db);res.json({user:sanitizeUser(user)});
+});
+
+app.post('/api/market/cancel',authMiddleware,(req,res)=>{
+  const{listingId}=req.body;
+  const key=req.user.username.toLowerCase();
+  const user=db.users[key];if(!user)return res.status(404).json({error:'Not found'});
+  migrateUser(user);
+  if(!db.market)db.market=[];
+  const idx=db.market.findIndex(l=>l.id===listingId&&l.seller.toLowerCase()===key);
+  if(idx<0)return res.status(404).json({error:'Listing not found'});
+  const listing=db.market[idx];
+  db.market.splice(idx,1);
+  // Return to inventory
+  const inv=listing.type==='bird'?user.inventory.birds:listing.type==='pipe'?user.inventory.pipes:listing.type==='bg'?user.inventory.bgs:user.inventory.trails;
+  if(inv&&!inv.includes(listing.itemId))inv.push(listing.itemId);
+  saveData(db);res.json({user:sanitizeUser(user)});
+});
+
+app.post('/api/market/buy',authMiddleware,(req,res)=>{
+  const{listingId}=req.body;
+  const key=req.user.username.toLowerCase();
+  const buyer=db.users[key];if(!buyer)return res.status(404).json({error:'Not found'});
+  migrateUser(buyer);
+  if(!db.market)db.market=[];
+  const idx=db.market.findIndex(l=>l.id===listingId);
+  if(idx<0)return res.status(404).json({error:'Listing not found'});
+  const listing=db.market[idx];
+  if(listing.seller.toLowerCase()===key)return res.status(400).json({error:'Cannot buy your own listing'});
+  if((buyer.coins||0)<listing.price)return res.status(400).json({error:'Not enough coins'});
+  // Transfer
+  buyer.coins=(buyer.coins||0)-listing.price;
+  const inv=listing.type==='bird'?buyer.inventory.birds:listing.type==='pipe'?buyer.inventory.pipes:listing.type==='bg'?buyer.inventory.bgs:buyer.inventory.trails;
+  if(inv&&!inv.includes(listing.itemId))inv.push(listing.itemId);
+  // Pay seller
+  const seller=db.users[listing.seller.toLowerCase()];
+  if(seller){migrateUser(seller);seller.coins=(seller.coins||0)+listing.price;}
+  db.market.splice(idx,1);
+  saveData(db);res.json({user:sanitizeUser(buyer)});
+});
+
 app.get('/api/chat',(req,res)=>res.json(db.chat?.slice(-50)||[]));
 
 // Socket
@@ -402,6 +475,34 @@ io.on('connection',(socket)=>{
     db.chat.push(msg);
     if(db.chat.length>200)db.chat=db.chat.slice(-200);
     io.emit('chat_message',msg);
+  });
+
+  // ── Private DMs ──
+  socket.on('dm_send',({token,to,text})=>{
+    let from='';
+    try{const d=jwt.verify(token,JWT_SECRET);from=d.username;}catch{return;}
+    if(!from||!text||!text.trim())return;
+    const msg={from,to,text:text.trim().slice(0,500),ts:Date.now(),id:'dm'+Date.now()+Math.random().toString(36).slice(2)};
+    // Deliver to recipient if online
+    const targetSocket=[...io.sockets.sockets.values()].find(s=>s.data?.username===to.toLowerCase());
+    if(targetSocket)targetSocket.emit('dm_receive',msg);
+    // Always echo back to sender
+    socket.emit('dm_echo',msg);
+    // Store in db for history
+    if(!db.dms)db.dms={};
+    const convKey=[from.toLowerCase(),to.toLowerCase()].sort().join(':');
+    if(!db.dms[convKey])db.dms[convKey]=[];
+    db.dms[convKey].push(msg);
+    if(db.dms[convKey].length>100)db.dms[convKey]=db.dms[convKey].slice(-100);
+    saveData(db);
+  });
+
+  socket.on('dm_history',({token,with:withUser})=>{
+    let username='';
+    try{const d=jwt.verify(token,JWT_SECRET);username=d.username;}catch{return;}
+    const convKey=[username.toLowerCase(),withUser.toLowerCase()].sort().join(':');
+    const history=(db.dms&&db.dms[convKey])||[];
+    socket.emit('dm_history',{with:withUser,messages:history});
   });
 
   socket.on('set_identity',({token})=>{
@@ -473,6 +574,7 @@ io.on('connection',(socket)=>{
     } else {
       // Queue for when they come online
       if(!db.pendingTrades)db.pendingTrades={};
+if(!db.market)db.market=[];
       if(!db.pendingTrades[toKey])db.pendingTrades[toKey]=[];
       db.pendingTrades[toKey].push(trade);
       // Keep only last 5 pending trades per user
