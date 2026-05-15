@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Flappy Master</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>🐦</text></svg>"/>
+</head>
+<body>
+  <div id="app">
+    <div id="game-side">
+      <canvas id="c" width="340" height="480"></canvas>
+      <div id="hint">tap or press space to flap</div>
+    </div>
+    <div id="panel">
+
+      <!-- MENU -->
+      <div id="screen-menu" class="screen active">
+        <div class="card">
+          <div class="card-title logo">🐦 Flappy Master</div>
+          <button class="btn-p" onclick="showScreen('screen-register')">create account</button>
+          <button class="btn-g" onclick="showScreen('screen-login')">log in</button>
+          <div class="divider"><hr><span>or</span><hr></div>
+          <button class="btn-g" onclick="playAsGuest()">play as guest</button>
+        </div>
+        <div class="card" id="global-preview">
+          <div class="card-title">🏆 top scores</div>
+          <div id="menu-lb"></div>
+        </div>
+      </div>
+
+      <!-- REGISTER -->
+      <div id="screen-register" class="screen">
+        <div class="card">
+          <div class="card-title">create account</div>
+          <div class="field"><label>username</label><input type="text" id="reg-name" placeholder="pick a username" maxlength="18"/></div>
+          <div class="field">
+            <label>password</label>
+            <div class="pw-wrap">
+              <input type="password" id="reg-pass" placeholder="min 12 characters" oninput="updateStrength()"/>
+              <button class="pw-eye" onclick="togglePw('reg-pass',this)" type="button">👁</button>
+            </div>
+            <div class="pw-strength-wrap"><div id="strength-bar" class="pw-strength-bar"></div></div>
+            <div class="pw-hint" id="strength-label">enter a password</div>
+          </div>
+          <div class="field">
+            <label>confirm password</label>
+            <div class="pw-wrap">
+              <input type="password" id="reg-pass2" placeholder="repeat password"/>
+              <button class="pw-eye" onclick="togglePw('reg-pass2',this)" type="button">👁</button>
+            </div>
+          </div>
+          <div class="err" id="reg-err"></div>
+          <button class="btn-p" onclick="doRegister()">create account</button>
+          <div class="back-row"><button class="btn-lk" onclick="showScreen('screen-menu')">← back</button></div>
+        </div>
+      </div>
+
+      <!-- LOGIN -->
+      <div id="screen-login" class="screen">
+        <div class="card">
+          <div class="card-title">log in</div>
+          <div class="field"><label>username</label><input type="text" id="log-name" placeholder="username"/></div>
+          <div class="field">
+            <label>password</label>
+            <div class="pw-wrap">
+              <input type="password" id="log-pass" placeholder="password"/>
+              <button class="pw-eye" onclick="togglePw('log-pass',this)" type="button">👁</button>
+            </div>
+          </div>
+          <div class="err" id="log-err"></div>
+          <button class="btn-p" onclick="doLogin()">log in</button>
+          <div class="back-row"><button class="btn-lk" onclick="showScreen('screen-menu')">← back</button></div>
+        </div>
+      </div>
+
+      <!-- HUB -->
+      <div id="screen-hub" class="screen">
+        <div class="card hub-header">
+          <div class="user-row">
+            <div class="avatar" id="hub-avatar"></div>
+            <div class="user-info">
+              <div class="user-name" id="hub-name"></div>
+              <div class="user-meta">
+                <span class="rank-badge" id="hub-rank-badge"></span>
+                <span class="coin-chip">🪙 <span id="hub-coins">0</span></span>
+              </div>
+            </div>
+            <button class="btn-lk logout-btn" onclick="doLogout()">out</button>
+          </div>
+          <div class="rank-bar-wrap"><div id="hub-rank-bar" class="rank-bar"></div></div>
+          <div class="rank-progress" id="hub-rank-progress"></div>
+          <nav class="nav-row">
+            <button class="nav-btn" data-section="play" onclick="goSection('play')">▶ play</button>
+            <button class="nav-btn" data-section="ranked" onclick="goSection('ranked')">⚔ ranked</button>
+            <button class="nav-btn" data-section="daily" onclick="goSection('daily')">📅 daily</button>
+            <button class="nav-btn" data-section="shop" onclick="goSection('shop')">🛍 shop</button>
+            <button class="nav-btn" data-section="profile" onclick="goSection('profile')">👤 profile</button>
+          </nav>
+        </div>
+        <div id="hub-section"></div>
+      </div>
+
+      <!-- GAME HUD -->
+      <div id="screen-game" class="screen">
+        <div class="card">
+          <div class="game-hud-top">
+            <div class="avatar sm" id="hud-avatar"></div>
+            <span class="hud-name" id="hud-name"></span>
+            <span class="coin-chip">🪙 <span id="hud-coins">0</span></span>
+            <button class="btn-lk" onclick="exitToHub()">menu</button>
+          </div>
+          <div class="metrics-row">
+            <div class="metric"><div class="metric-label">score</div><div class="metric-val" id="hud-score">0</div></div>
+            <div class="metric"><div class="metric-label">combo</div><div class="metric-val" id="hud-combo">×1</div></div>
+            <div class="metric"><div class="metric-label">best</div><div class="metric-val" id="hud-best">0</div></div>
+          </div>
+          <button class="btn-g save-btn" id="save-btn" onclick="saveScore()" style="display:none;">💾 save score</button>
+        </div>
+
+        <!-- Versus panel shown during live match -->
+        <div class="card" id="versus-panel" style="display:none;">
+          <div class="card-title" id="vs-title">vs <span id="vs-opponent"></span></div>
+          <div class="metrics-row">
+            <div class="metric"><div class="metric-label">you</div><div class="metric-val" id="vs-you">0</div></div>
+            <div class="metric"><div class="metric-label" id="vs-opp-name">opponent</div><div class="metric-val" id="vs-opp">0</div></div>
+          </div>
+          <div id="vs-status" class="vs-status"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🏆 leaderboard</div>
+          <div id="lb-list"></div>
+        </div>
+      </div>
+
+      <!-- MATCHMAKING -->
+      <div id="screen-matchmaking" class="screen">
+        <div class="card" style="text-align:center;padding:2rem 1rem;">
+          <div style="font-size:32px;margin-bottom:12px;" id="mm-bird-anim">🐦</div>
+          <div class="card-title" style="justify-content:center;" id="mm-title">finding opponent...</div>
+          <div id="mm-status" style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;"></div>
+          <div id="mm-countdown" style="font-size:48px;font-weight:700;color:var(--accent);display:none;"></div>
+          <button class="btn-g" onclick="leaveQueue()" id="mm-cancel-btn">cancel</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
