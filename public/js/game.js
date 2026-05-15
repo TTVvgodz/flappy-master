@@ -420,21 +420,6 @@ function clearBadge(tab){
   const btn=document.querySelector('.hnb[data-s="'+tab+'"]');if(!btn)return;
   const b=btn.querySelector('.nb');if(b)b.remove();
 }
-let _badges={inventory:0,trade:0}; // notification badge counts
-
-function addBadge(tab,count=1){
-  _badges[tab]=(_badges[tab]||0)+count;
-  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');
-  if(!btn)return;
-  let badge=btn.querySelector('.nav-badge');
-  if(!badge){badge=document.createElement('span');badge.className='nav-badge';badge.style.cssText='position:absolute;top:-4px;right:-4px;background:#e24b4a;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700;';btn.style.position='relative';btn.appendChild(badge);}
-  badge.textContent=_badges[tab];
-}
-function clearBadge(tab){
-  _badges[tab]=0;
-  const btn=document.querySelector('.hnb[data-s="'+tab+'"]');
-  if(btn){const b=btn.querySelector('.nav-badge');if(b)b.remove();}
-}
 let _deadButtonsVisible=false;
 let cutsceneActive=false,cutsceneFrame=0,cutsceneBirdX=0;
 
@@ -837,21 +822,21 @@ function renderTrade(el){
   }
 
   html+='<div class="slabel">🔄 send a trade offer</div>';
-  html+='<div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:10px;">Pick what you're offering, then what you want, then who to send it to.</div>';
+  html+='<div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:10px;">Pick what to offer, what you want, then who to send it to.</div>';
 
   // Step 1: What you offer
-  html+='<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;">1. what you're offering</div>';
+  html+='<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:6px;">1. what you\'re offering</div>';
   html+='<div style="display:flex;gap:5px;margin-bottom:8px;">';
   ['bird','pipe','bg','trail'].forEach(t=>{
     const sel=tradeOffer.offerType===t;
-    html+='<button onclick="setTradeOfferType(''+t+'')" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(94,200,245,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
+    html+='<button data-v="'+t+'" onclick="setTradeOfferType(this.dataset.v)" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(94,200,245,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
   });
   html+='</div>';
   const offerItems=tradeOffer.offerType==='bird'?getAllOwnedBirds():tradeOffer.offerType==='pipe'?(inv.pipes||[]):tradeOffer.offerType==='bg'?(inv.bgs||[]):(inv.trails||[]);
   html+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">';
   offerItems.forEach(id=>{
     const sel=tradeOffer.offerId===id;
-    html+='<div onclick="tradeOffer.offerId=''+id+'';renderTrade(document.getElementById('hub-body'))" style="padding:5px 9px;border-radius:6px;cursor:pointer;font-size:11px;border:1px solid '+(sel?'#5ec8f5':'rgba(255,255,255,.15)')+';background:'+(sel?'rgba(94,200,245,.15)':'rgba(255,255,255,.05)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.7)')+';">'+id.replace(/_/g,' ')+'</div>';
+    html+='<div data-v="'+id+'" onclick="setTradeItem(this.dataset.v)" style="padding:5px 9px;border-radius:6px;cursor:pointer;font-size:11px;border:1px solid '+(sel?'#5ec8f5':'rgba(255,255,255,.15)')+';background:'+(sel?'rgba(94,200,245,.15)':'rgba(255,255,255,.05)')+';color:'+(sel?'#5ec8f5':'rgba(255,255,255,.7)')+';">'+id.replace(/_/g,' ')+'</div>';
   });
   html+='</div>';
 
@@ -860,7 +845,7 @@ function renderTrade(el){
   html+='<div style="display:flex;gap:5px;margin-bottom:8px;">';
   ['bird','pipe','bg','trail'].forEach(t=>{
     const sel=tradeOffer.wantType===t;
-    html+='<button onclick="setTradeWantType(''+t+'')" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(250,199,117,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#fac775':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
+    html+='<button data-v="'+t+'" onclick="setTradeWantType(this.dataset.v)" style="flex:1;padding:6px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-family:inherit;background:'+(sel?'rgba(250,199,117,.2)':'rgba(255,255,255,.06)')+';color:'+(sel?'#fac775':'rgba(255,255,255,.5)')+';">'+ICONS[t]+' '+t+'</button>';
   });
   html+='</div>';
   html+='<input id="trade-want-id" placeholder="type item name (e.g. phoenix, void, neon)" value="'+(tradeOffer.wantId||'')+'" oninput="tradeOffer.wantId=this.value" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#fff;padding:7px 10px;border-radius:7px;font-family:inherit;font-size:12px;margin-bottom:12px;"/>';
@@ -874,15 +859,16 @@ function renderTrade(el){
 }
 
 function setTradeOfferType(t){tradeOffer.offerType=t;tradeOffer.offerId=null;renderTrade(document.getElementById('hub-body'));}
+function setTradeItem(id){tradeOffer.offerId=id;renderTrade(document.getElementById('hub-body'));}
 function setTradeWantType(t){tradeOffer.wantType=t;renderTrade(document.getElementById('hub-body'));}
 
 async function sendTradeOffer(){
   const toUser=(document.getElementById('trade-to-user')?.value||tradeOffer.toUser||'').trim();
   const wantId=(document.getElementById('trade-want-id')?.value||tradeOffer.wantId||'').trim();
-  if(!tradeOffer.offerId){alert('select what you're offering');return;}
+  if(!tradeOffer.offerId){alert('select what you\'re offering');return;}
   if(!wantId){alert('type what you want in return');return;}
   if(!toUser){alert('enter the player username');return;}
-  if(toUser.toLowerCase()===currentUser.username.toLowerCase()){alert('you can't trade with yourself!');return;}
+  if(toUser.toLowerCase()===currentUser.username.toLowerCase()){alert('you can\'t trade with yourself!');return;}
   tradeOffer.toUser=toUser;tradeOffer.wantId=wantId;
   socket.emit('trade_offer',{token:authToken,from:currentUser.username,to:toUser,offerType:tradeOffer.offerType,offerId:tradeOffer.offerId,wantType:tradeOffer.wantType,wantId:wantId});
   coinPopups.push({x:W/2,y:H*.3,text:'📤 Sent to '+toUser+'!',life:2,vy:-1,big:true});
@@ -1079,7 +1065,7 @@ function drawGround(){
   const gr=ctx.createLinearGradient(0,gy,0,gy+20);
   gr.addColorStop(0,'#56c43a');gr.addColorStop(1,'#3a8c28');
   ctx.fillStyle=gr;ctx.fillRect(0,gy,W,20);
-  // Grass blades — drawn FROM ground line upward, clipped so they can't escape
+  // Grass blades — drawn FROM ground line upward, clipped so they can\'t escape
   const bladeCount=Math.floor(W/6);
   for(let i=0;i<bladeCount;i++){
     const bx=(i*6+(menuFrame*.5)%6)%W;
@@ -1437,7 +1423,7 @@ document.addEventListener('visibilitychange',()=>{
   // When tab becomes visible again, reset game physics timing
   if(!_tabHidden&&gState==='playing'){
     // Skip physics for frames missed while hidden by forcing a resetable flag
-    bird.vy=Math.min(bird.vy,2); // don't let velocity accumulate while hidden
+    bird.vy=Math.min(bird.vy,2); // don\'t let velocity accumulate while hidden
   }
 });
 function mainLoop(){
