@@ -111,13 +111,26 @@ function dailySeed(idx=0){const d=new Date();return(d.getFullYear()*10000+(d.get
 function xpForLevel(lvl){return Math.max(50,lvl*50);}  // much lower XP req
 function diffMult(diff){return diff==='easy'?1:diff==='hard'?2:1.5;}
 
-const DAILY_CHALLENGES=[
-  {id:0,name:'Morning Flight',diff:'easy',desc:'A gentle warm-up run',icon:'☀️'},
-  {id:1,name:'Noon Rush',diff:'normal',desc:'The classic experience',icon:'🌤️'},
-  {id:2,name:'Storm Run',diff:'hard',desc:'Only for the brave',icon:'⚡'},
-  {id:3,name:'Speed Demon',diff:'hard',desc:'Pipes fly fast today',icon:'💨'},
-  {id:4,name:'Easy Glide',diff:'easy',desc:'Relax and rack up coins',icon:'🌿'},
+const DAILY_QUESTS=[
+  {id:0,name:'Warm Up',icon:'☀️',desc:'Play 3 games in any mode',type:'play_games',target:3,reward:{coins:30,xp:50}},
+  {id:1,name:'Easy Rider',icon:'🌿',desc:'Clear 10 pipes on easy',type:'pipes_easy',target:10,reward:{coins:40,xp:60}},
+  {id:2,name:'Normal Day',icon:'🌤️',desc:'Score 15 on normal difficulty',type:'score_normal',target:15,reward:{coins:60,xp:80}},
+  {id:3,name:'Pipe Dream',icon:'🎋',desc:'Clear 30 total pipes',type:'pipes_any',target:30,reward:{coins:50,xp:70}},
+  {id:4,name:'Hard Mode',icon:'⚡',desc:'Score 10 on hard difficulty',type:'score_hard',target:10,reward:{coins:80,xp:100}},
+  {id:5,name:'Coin Hunter',icon:'🪙',desc:'Earn 50 coins in one game',type:'coins_one_game',target:50,reward:{coins:60,xp:90}},
+  {id:6,name:'Survivor',icon:'🛡️',desc:'Play a ranked match',type:'play_ranked',target:1,reward:{coins:70,xp:120}},
+  {id:7,name:'Daily Grind',icon:'💪',desc:'Play 5 games today',type:'play_games',target:5,reward:{coins:100,xp:150}},
+  {id:8,name:'Sky Master',icon:'🏆',desc:'Score 25 on any difficulty',type:'score_any',target:25,reward:{coins:120,xp:200,crate:'trail_common'}},
+  {id:9,name:'God Mode',icon:'💀',desc:'Score 20 on hard difficulty',type:'score_hard',target:20,reward:{coins:200,xp:300,crate:'trail_premium'}},
 ];
+// Pick 4 quests per day based on date seed
+function getDailyQuests(){
+  const seed=dailySeed(0);
+  const picks=[];const used=new Set();
+  let r=seed;
+  while(picks.length<4){r=(r*1664525+1013904223)&0xffffffff;const idx=Math.abs(r)%DAILY_QUESTS.length;if(!used.has(idx)){used.add(idx);picks.push({...DAILY_QUESTS[idx],key:todayKey()});}}
+  return picks;
+}
 
 function getRankInfo(pts){
   for(let i=RANKS.length-1;i>=0;i--){
@@ -150,6 +163,7 @@ function migrateUser(u){
   if(!u.inventory.cases)u.inventory.cases=[];
   if(!u.equipped.trail)u.equipped.trail='none';
   if(!Array.isArray(u.daily_done))u.daily_done=[];
+  if(!u.quest_progress)u.quest_progress={};
   if(u.coins===undefined)u.coins=50;
 }
 
@@ -275,6 +289,45 @@ app.get('/api/leaderboard/ranked',(req,res)=>{
     .map((u,i)=>({username:u.username,rank_pts:u.rank_pts||0,best_score:u.best_score||0,rank:getRankInfo(u.rank_pts||0),crown:i===0,level:u.level||1,equipped:u.equipped||{}}));
   res.json(rows);
 });
+app.post('/api/quest/progress',authMiddleware,(req,res)=>{
+  const{questId,type,value}=req.body;
+  const key=req.user.username.toLowerCase();
+  const user=db.users[key];
+  if(!user)return res.status(404).json({error:'Not found'});
+  migrateUser(user);
+  const today=todayKey();
+  if(!user.quest_progress)user.quest_progress={};
+  if(!user.quest_progress[today])user.quest_progress[today]={};
+  const qp=user.quest_progress[today];
+  if(qp[questId]?.done)return res.json({user:sanitizeUser(user),already_done:true});
+  qp[questId]=(qp[questId]||{count:0});
+  qp[questId].count=Math.max(qp[questId].count||0,value||0)+(type==='increment'?1:0);
+  // Check if completed
+  const quests=getDailyQuests();
+  const quest=quests.find(q=>q.id===questId);
+  let completed=false;
+  if(quest&&qp[questId].count>=quest.target){
+    qp[questId].done=true;completed=true;
+    user.coins=(user.coins||0)+quest.reward.coins;
+    user.xp=(user.xp||0)+quest.reward.xp;
+    if(quest.reward.crate){if(!user.inventory.cases)user.inventory.cases=[];user.inventory.cases.push(quest.reward.crate);}
+    // Level up check
+    let levelsGained=0;
+    while((user.level||1)<100&&user.xp>=xpForLevel(user.level||1)){user.xp-=xpForLevel(user.level||1);user.level=(user.level||1)+1;levelsGained++;user.coins+=20+levelsGained*5;}
+    // Every 3 level-ups give a random crate
+    if(levelsGained>0&&(user.level||1)%3===0){const tierOneCrates=['bird_common','pipe_common','bg_common','trail_common'];if(!user.inventory.cases)user.inventory.cases=[];user.inventory.cases.push(tierOneCrates[Math.floor(Math.random()*tierOneCrates.length)]);}
+  }
+  saveData(db);
+  res.json({user:sanitizeUser(user),completed,quest});
+});
+app.get('/api/quest/progress',authMiddleware,(req,res)=>{
+  const key=req.user.username.toLowerCase();
+  const user=db.users[key];
+  if(!user)return res.status(404).json({error:'Not found'});
+  migrateUser(user);
+  res.json({progress:(user.quest_progress||{})[todayKey()]||{},key:todayKey()});
+});
+
 app.get('/api/history',authMiddleware,(req,res)=>{
   res.json((db.history||[]).filter(h=>h.username===req.user.username).slice(-20).reverse());
 });
@@ -333,7 +386,7 @@ app.post('/api/equip',authMiddleware,(req,res)=>{
   res.json({user:sanitizeUser(user)});
 });
 
-app.get('/api/daily',(req,res)=>res.json({challenges:DAILY_CHALLENGES.map(c=>({...c,seed:dailySeed(c.id),key:todayKey()})),key:todayKey()}));
+app.get('/api/daily',(req,res)=>res.json({quests:getDailyQuests(),key:todayKey()}));
 app.get('/api/chat',(req,res)=>res.json(db.chat?.slice(-50)||[]));
 
 // Socket

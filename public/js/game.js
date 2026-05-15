@@ -395,6 +395,7 @@ function playCrunch(){const ac=getAudio();if(!ac)return;const buf=ac.createBuffe
 let currentUser=null,authToken=localStorage.getItem('fm_token')||null;
 let isGameScreen=false,hubSection='play',chosenDiff='normal',gameMode='normal';
 let activeDailyChallenge=0,activeDailyDiff='normal';
+let questProgress={};
 let bird,pipes,score,frame,gState,groundOffset,sessionBest,particles,coinPopups,deadBird,trailPoints;
 let powerups=[],activePowerup=null,powerupTimer=0;
 const POWERUP_TYPES=[
@@ -405,7 +406,7 @@ const POWERUP_TYPES=[
 let menuFrame=0,menuPipes=[],menuBirds=[],menuObjects=[];
 let matchId=null,opponentName=null,opponentAlive=true,matchCountdown=null;
 let ghostY=0,ghostAngle=0,opponentSkin=null;
-let crownUser=null;
+let crownUser={easy:null,normal:null,hard:null};
 let pendingTrade=null;
 let _badges={inventory:0,trade:0};
 function addBadge(tab,n=1){
@@ -515,7 +516,8 @@ async function doRegister(){
   if(data.error){err.textContent=data.error;return;}
   authToken=data.token;localStorage.setItem('fm_token',authToken);currentUser=data.user;err.textContent='';
   socket.emit('set_identity',{token:authToken});
-  stopMusic();goHub();
+  // Keep music playing (don't stop on register)
+  goHub();
 }
 async function doLogin(){
   const username=document.getElementById('log-name').value.trim();
@@ -525,7 +527,8 @@ async function doLogin(){
   if(data.error){err.textContent=data.error;return;}
   authToken=data.token;localStorage.setItem('fm_token',authToken);currentUser=data.user;err.textContent='';
   socket.emit('set_identity',{token:authToken});
-  stopMusic();goHub();
+  // Keep music playing
+  goHub();
 }
 function doLogout(){
   authToken=null;currentUser=null;localStorage.removeItem('fm_token');socket.emit('leave_queue');
@@ -577,6 +580,7 @@ function goSection(s){
   else if(s==='cases')renderCases(el);
   else if(s==='inventory'){clearBadge('inventory');renderInventory(el);}
   else if(s==='trade'){clearBadge('trade');renderTrade(el);}
+  else if(s==='achievements')renderAchievements(el);
   else if(s==='chat')renderChatSection(el);else if(s==='profile')renderProfile(el);
 }
 
@@ -591,7 +595,7 @@ async function renderPlay(el){
     <div id="play-lb"><div class="empty">loading...</div></div>`;
   const rows=await apiFetch('/api/leaderboard?diff='+chosenDiff);
   const lbEl=document.getElementById('play-lb');
-  if(lbEl){lbEl.innerHTML=renderLbHTML(rows,'score');if(rows.length>0)crownUser=rows[0].username;}
+  if(lbEl){lbEl.innerHTML=renderLbHTML(rows,'score');if(rows.length>0)crownUser={...crownUser,[chosenDiff]:rows[0].username};}
 }
 function selDiff(d){chosenDiff=d;renderPlay(document.getElementById('hub-body'));}
 
@@ -615,20 +619,37 @@ function leaveQueue(){socket.emit('leave_queue');if(matchCountdown)clearInterval
 
 // ── Daily ─────────────────────────────────────────────────────────────────────
 async function renderDaily(el){
-  const info=await apiFetch('/api/daily');const lbRows=await apiFetch('/api/leaderboard/daily');
-  const challenges=info.challenges||[];const doneList=currentUser?.daily_done||[];const todayKey=info.key;
+  if(!currentUser){el.innerHTML='<div class="empty">log in to track daily quests</div>';return;}
+  const [info,prog]=await Promise.all([apiFetch('/api/daily'),apiFetch('/api/quest/progress')]);
+  questProgress=prog.progress||{};
+  const quests=info.quests||[];
   const DIFF_COLORS={easy:'#5dcaa5',normal:'#5ec8f5',hard:'#e24b4a'};
-  el.innerHTML='<div class="slabel">📅 daily challenges</div>'+
-    '<div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:10px;">5 challenges today — same pipes for every player!</div>'+
-    challenges.map(c=>{const isDone=doneList.includes(todayKey+':'+c.id);const col=DIFF_COLORS[c.diff]||'#fff';
-    return'<div style="background:rgba(255,255,255,.05);border:1px solid '+(isDone?col+'44':'rgba(255,255,255,.1)')+';border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">'+
-      '<div style="font-size:22px;">'+c.icon+'</div><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:#fff;">'+c.name+'</div><div style="font-size:11px;color:rgba(255,255,255,.4);">'+c.desc+' · <span style="color:'+col+';">'+c.diff+'</span></div></div>'+
-      (isDone?'<div style="font-size:11px;color:#5dcaa5;font-weight:700;">✓ done</div>':'<button onclick="startDailyChallenge('+c.id+',\''+c.diff+'\')" style="background:'+col+';color:#06131a;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">play</button>')+
-      '</div>';}).join('')+
-    '<div class="slabel" style="margin-top:8px;">today\'s leaderboard</div>'+
-    (lbRows.length?renderLbHTML(lbRows,'score'):'<div class="empty">no scores yet — be first!</div>');
+  let html='<div class="slabel">📋 daily quests</div>';
+  html+='<div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:10px;">Resets at midnight. Complete quests for coins, XP, and crates!</div>';
+  quests.forEach(q=>{
+    const qp=questProgress[q.id]||{count:0,done:false};
+    const done=qp.done;
+    const pct=Math.min(100,Math.round(((qp.count||0)/q.target)*100));
+    const rc=q.reward;
+    html+=`<div style="background:rgba(255,255,255,${done?'.08':'.05'});border:1px solid ${done?'rgba(93,202,165,.5)':'rgba(255,255,255,.1)'};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div style="font-size:20px;">${q.icon}</div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;color:${done?'#5dcaa5':'#fff'};">${q.name} ${done?'✓':''}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.45);">${q.desc}</div>
+        </div>
+        <div style="text-align:right;font-size:10px;color:rgba(255,255,255,.5);">
+          ${rc.coins}🪙 ${rc.xp}xp${rc.crate?' +📦':''}
+        </div>
+      </div>
+      <div style="height:5px;background:rgba(255,255,255,.1);border-radius:3px;">
+        <div style="height:5px;width:${pct}%;background:${done?'#5dcaa5':'#5ec8f5'};border-radius:3px;transition:width .4s;"></div>
+      </div>
+      <div style="font-size:10px;color:rgba(255,255,255,.35);margin-top:3px;">${qp.count||0}/${q.target}</div>
+    </div>`;
+  });
+  el.innerHTML=html;
 }
-function startDailyChallenge(id,diff){activeDailyChallenge=id;activeDailyDiff=diff||'normal';startGame('daily');}
 
 // ── Cases ─────────────────────────────────────────────────────────────────────
 async function renderCases(el){
@@ -752,7 +773,7 @@ function showOpenResult(item,data,rc){
     <button class="btn-p" style="width:200px;" onclick="closeOpenOverlay()">nice!</button>
   `;
 }
-function closeOpenOverlay(){document.getElementById('open-overlay').classList.remove('active');if(hubSection==='cases')renderCases(document.getElementById('hub-body'));if(hubSection==='inventory')renderInventory(document.getElementById('hub-body'));}
+function closeOpenOverlay(){document.getElementById('open-overlay').classList.remove('active');renderCases(document.getElementById('hub-body'));if(hubSection==='inventory'){invTab='cases';renderInventory(document.getElementById('hub-body'));}else if(hubSection==='cases'){renderCases(document.getElementById('hub-body'));}}
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
 let invTab='birds';
@@ -859,6 +880,34 @@ function renderTrade(el){
 }
 
 function setTradeOfferType(t){tradeOffer.offerType=t;tradeOffer.offerId=null;renderTrade(document.getElementById('hub-body'));}
+
+async function trackQuestProgress(gameScore){
+  if(!currentUser)return;
+  const info=await apiFetch('/api/daily');
+  const quests=info.quests||[];
+  const diffCoinsEarned=gameMode==='ranked'?2:chosenDiff==='hard'?3:chosenDiff==='normal'?2:1;
+  const totalCoins=gameScore*diffCoinsEarned;
+  for(const q of quests){
+    let val=0,type='set';
+    if(q.type==='play_games'){val=1;type='increment';}
+    else if(q.type==='pipes_easy'&&chosenDiff==='easy'){val=gameScore;}
+    else if(q.type==='score_normal'&&chosenDiff==='normal'){val=gameScore;}
+    else if(q.type==='score_hard'&&chosenDiff==='hard'){val=gameScore;}
+    else if(q.type==='pipes_any'){val=gameScore;}
+    else if(q.type==='score_any'){val=gameScore;}
+    else if(q.type==='coins_one_game'){val=totalCoins;}
+    else if(q.type==='play_ranked'&&gameMode==='ranked'){val=1;type='increment';}
+    else continue;
+    const res=await apiFetch('/api/quest/progress',{method:'POST',body:JSON.stringify({questId:q.id,type,value:type==='increment'?undefined:val})});
+    if(res.completed&&res.quest){
+      const rc=res.quest.reward;
+      coinPopups.push({x:W/2,y:H*.3,text:'Quest Complete! +'+rc.coins+'🪙'+(rc.crate?' +📦':''),life:3,vy:-.8,big:true});
+      if(res.user)currentUser=res.user;
+      updateHubBar();
+      if(rc.crate)addBadge('inventory',1);
+    }
+  }
+}
 function setTradeItem(id){tradeOffer.offerId=id;renderTrade(document.getElementById('hub-body'));}
 function setTradeWantType(t){tradeOffer.wantType=t;renderTrade(document.getElementById('hub-body'));}
 
@@ -891,6 +940,48 @@ function showTradeNotif(trade){
 }
 async function equipItem(type,id){if(!currentUser)return;const data=await apiFetch('/api/equip',{method:'POST',body:JSON.stringify({type,itemId:id})});if(data.error){alert(data.error);return;}currentUser=data.user;updateHubBar();renderInventory(document.getElementById('hub-body'));}
 
+
+// ── Achievements ──────────────────────────────────────────────────────────────
+const ACHIEVEMENTS=[
+  {id:'first_flight',icon:'🐣',name:'First Flight',desc:'Play your first game',check:(u)=>(u.games_played||0)>=1},
+  {id:'ten_games',icon:'🎮',name:'Veteran',desc:'Play 10 games',check:(u)=>(u.games_played||0)>=10},
+  {id:'fifty_games',icon:'🏆',name:'Addicted',desc:'Play 50 games',check:(u)=>(u.games_played||0)>=50},
+  {id:'score_5',icon:'🌱',name:'Getting Started',desc:'Score 5 on any difficulty',check:(u)=>(u.best_score||0)>=5},
+  {id:'score_20',icon:'🌟',name:'Rising Star',desc:'Score 20 on any difficulty',check:(u)=>(u.best_score||0)>=20},
+  {id:'score_50',icon:'💫',name:'Pipe Master',desc:'Score 50 on any difficulty',check:(u)=>(u.best_score||0)>=50},
+  {id:'score_100',icon:'🔥',name:'Legendary Run',desc:'Score 100 on any difficulty',check:(u)=>(u.best_score||0)>=100},
+  {id:'coins_100',icon:'🪙',name:'Coin Collector',desc:'Accumulate 100 coins',check:(u)=>(u.coins||0)>=100},
+  {id:'coins_500',icon:'💰',name:'Rich Bird',desc:'Accumulate 500 coins',check:(u)=>(u.coins||0)>=500},
+  {id:'level_5',icon:'⬆️',name:'Level Up',desc:'Reach level 5',check:(u)=>(u.level||1)>=5},
+  {id:'level_10',icon:'🚀',name:'Going Places',desc:'Reach level 10',check:(u)=>(u.level||1)>=10},
+  {id:'level_25',icon:'🌙',name:'Sky Walker',desc:'Reach level 25',check:(u)=>(u.level||1)>=25},
+  {id:'rank_hatch',icon:'🥚',name:'Hatchling',desc:'Reach Hatchling rank',check:(u)=>(u.rank_pts||0)>=50},
+  {id:'rank_flapper',icon:'🐦',name:'Flapper',desc:'Reach Flapper rank',check:(u)=>(u.rank_pts||0)>=500},
+  {id:'rank_master',icon:'👑',name:'Flappy Master',desc:'Reach Flappy Master rank',check:(u)=>(u.rank_pts||0)>=8000},
+  {id:'crates_3',icon:'📦',name:'Unboxing',desc:'Open 3 crates',check:(u)=>(u.crates_opened||0)>=3},
+  {id:'trade_1',icon:'🔄',name:'Trader',desc:'Complete a trade',check:(u)=>(u.trades_done||0)>=1},
+  {id:'trail_equip',icon:'✨',name:'Stylish',desc:'Equip a trail',check:(u)=>u.equipped?.trail&&u.equipped.trail!=='none'},
+  {id:'hard_10',icon:'💀',name:'Daredevil',desc:'Score 10 on hard mode',check:(u)=>(u.hard_best||0)>=10},
+  {id:'daily_3',icon:'📅',name:'Daily Player',desc:'Complete 3 daily quests',check:(u)=>(u.quests_done||0)>=3},
+];
+
+function renderAchievements(el){
+  if(!currentUser){el.innerHTML='<div class="empty">log in to see achievements</div>';return;}
+  const u=currentUser;
+  const unlocked=ACHIEVEMENTS.filter(a=>{try{return a.check(u);}catch{return false;}});
+  const locked=ACHIEVEMENTS.filter(a=>{try{return !a.check(u);}catch{return true;}});
+  let html='<div class="slabel">🏅 achievements ('+unlocked.length+'/'+ACHIEVEMENTS.length+')</div>';
+  html+='<div style="height:5px;background:rgba(255,255,255,.1);border-radius:3px;margin-bottom:12px;"><div style="height:5px;width:'+Math.round(unlocked.length/ACHIEVEMENTS.length*100)+'%;background:linear-gradient(90deg,#fac775,#e24b4a);border-radius:3px;"></div></div>';
+  if(unlocked.length>0){
+    html+='<div class="slabel">✓ unlocked</div>';
+    unlocked.forEach(a=>{html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(250,199,117,.08);border:1px solid rgba(250,199,117,.25);border-radius:8px;margin-bottom:6px;"><div style="font-size:22px;">'+a.icon+'</div><div><div style="font-size:12px;font-weight:700;color:#fac775;">'+a.name+'</div><div style="font-size:10px;color:rgba(255,255,255,.45);">'+a.desc+'</div></div></div>';});
+  }
+  if(locked.length>0){
+    html+='<div class="slabel" style="margin-top:8px;">🔒 locked</div>';
+    locked.forEach(a=>{html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-bottom:6px;opacity:.6;"><div style="font-size:22px;filter:grayscale(1);opacity:.4;">'+a.icon+'</div><div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);">'+a.name+'</div><div style="font-size:10px;color:rgba(255,255,255,.3);">'+a.desc+'</div></div></div>';});
+  }
+  el.innerHTML=html;
+}
 // ── Chat ──────────────────────────────────────────────────────────────────────
 async function renderChatSection(el){
   const msgs=await apiFetch('/api/chat');
@@ -979,8 +1070,8 @@ function startGame(mode){
   document.getElementById('hud-bottom').classList.add('active');
   // hide menu btn during play
   const mb=document.getElementById('hud-menu-btn');if(mb)mb.style.display='none';
-  currentTrackIdx=mode==='ranked'?6:4;document.getElementById('music-track').textContent=TRACKS[currentTrackIdx].name;
-  if(musicPlaying){stopMusic();playGeneratedTrack(TRACKS[currentTrackIdx].gen);}
+  // Always play chill breeze — don't switch on game start
+  if(!musicPlaying)playGeneratedTrack('chill1');
   resetGame();showCutscene();
 }
 
@@ -1122,7 +1213,9 @@ function drawBirdAt(bx,by,angle,wb,skin,alpha){
   ctx.fillStyle='#111';ctx.beginPath();ctx.arc(9,-6.5,3,0,Math.PI*2);ctx.fill();
   ctx.fillStyle='white';ctx.beginPath();ctx.arc(10.5,-8,1.2,0,Math.PI*2);ctx.fill();
   ctx.fillStyle=skin.colors[2];ctx.beginPath();ctx.moveTo(13,-1);ctx.lineTo(22,2);ctx.lineTo(13,5);ctx.closePath();ctx.fill();
-  if(currentUser&&currentUser.username===crownUser){ctx.fillStyle='#fac775';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText('👑',-2,-r-4);}
+  if(currentUser&&crownUser&&currentUser.username===crownUser.easy){ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText('🥉',-2,-r-4);}
+  else if(currentUser&&crownUser&&currentUser.username===crownUser.normal){ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText('🥈',-2,-r-4);}
+  else if(currentUser&&crownUser&&currentUser.username===crownUser.hard){ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText('👑',-2,-r-4);}
   ctx.restore();
 }
 
@@ -1130,30 +1223,29 @@ function drawTrail(bx,by,trailId){
   if(!trailId||trailId==='none')return;
   const td=TRAIL_DEFS[trailId];if(!td)return;
   if(!trailPoints)trailPoints=[];
-  // Attach to BACK/BUTT of bird (left side, opposite the beak)
-  const tailX=bx-BIRD_R*1.4;
-  const tailY=by+2;
-  trailPoints.unshift({x:tailX,y:tailY});
-  if(trailPoints.length>28)trailPoints.pop();
-  // Draw trail from oldest to newest so newer points appear on top
-  for(let i=trailPoints.length-1;i>=1;i--){
+  // Horizontal trail — attach to tail, spread LEFT only (same Y as bird)
+  const tailX=bx-BIRD_R*1.2;
+  trailPoints.unshift({x:tailX,y:by});
+  if(trailPoints.length>24)trailPoints.pop();
+  // Draw oldest first (furthest back), horizontal line of dots
+  for(let i=trailPoints.length-1;i>=0;i--){
     const age=i/trailPoints.length;
-    const sz=Math.max(1.5, BIRD_R*(1-age)*.7);
-    const alpha=(1-age)*.8;
+    // Size shrinks as it gets older/further back
+    const sz=Math.max(2,BIRD_R*.65*(1-age*.85));
+    const alpha=(1-age)*.85;
     ctx.save();ctx.globalAlpha=alpha;
     let col='#fff';
-    if(td.rainbow)col='hsl('+(menuFrame*4+i*15)+',100%,60%)';
+    if(td.rainbow)col='hsl('+(menuFrame*5+i*20)+',100%,65%)';
     else if(td.colors)col=td.colors[i%td.colors.length];
     ctx.fillStyle=col;
-    if(td.glow){ctx.shadowColor=td.glow;ctx.shadowBlur=sz*3;}
+    if(td.glow){ctx.shadowColor=td.glow;ctx.shadowBlur=sz*2.5;}
     const pt=trailPoints[i];
-    if(td.heart){ctx.font='bold '+Math.round(sz*1.8)+'px sans-serif';ctx.textAlign='center';ctx.fillText('❤',pt.x,pt.y);}
-    else if(td.star){ctx.font='bold '+Math.round(sz*1.8)+'px sans-serif';ctx.textAlign='center';ctx.fillText('⭐',pt.x,pt.y);}
-    else if(td.petal){ctx.font='bold '+Math.round(sz*1.8)+'px sans-serif';ctx.textAlign='center';ctx.fillText('🌸',pt.x,pt.y);}
+    if(td.heart){ctx.font='bold '+Math.round(sz*2)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('❤',pt.x,pt.y);ctx.textBaseline='alphabetic';}
+    else if(td.star){ctx.font='bold '+Math.round(sz*2)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⭐',pt.x,pt.y);ctx.textBaseline='alphabetic';}
+    else if(td.petal){ctx.font='bold '+Math.round(sz*2)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🌸',pt.x,pt.y);ctx.textBaseline='alphabetic';}
     else{ctx.beginPath();ctx.arc(pt.x,pt.y,sz,0,Math.PI*2);ctx.fill();}
     ctx.restore();
   }
-  // Clear shadow after trail
   ctx.shadowBlur=0;
 }
 
@@ -1437,9 +1529,9 @@ function mainLoop(){
 
 async function loadMenuLb(){
   const el=document.getElementById('menu-lb');if(!el)return;
-  const rows=await apiFetch('/api/leaderboard?diff=normal');
-  if(rows.length>0)crownUser=rows[0].username;
-  el.innerHTML='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">🏆 normal leaderboard</div>'+renderLbHTML(rows.slice(0,4),'score');
+  const [e,n,h]=await Promise.all([apiFetch('/api/leaderboard?diff=easy'),apiFetch('/api/leaderboard?diff=normal'),apiFetch('/api/leaderboard?diff=hard')]);
+  crownUser={easy:e[0]?.username||null,normal:n[0]?.username||null,hard:h[0]?.username||null};
+  el.innerHTML='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;margin-bottom:4px;">🏆 top scores</div>'+renderLbHTML(n.slice(0,3),'score');
 }
 
 (async function init(){
@@ -1447,8 +1539,12 @@ async function loadMenuLb(){
   showPanel('panel-menu'); // always show menu panel on start
   document.getElementById('music-track').textContent=TRACKS[0].name;
   // Auto-play on any first interaction
+  // Auto-play chill breeze on first interaction — never stop unless muted
   const _sm=()=>{
-    if(!musicPlaying){playGeneratedTrack(TRACKS[currentTrackIdx].gen);document.getElementById('music-track').textContent=TRACKS[currentTrackIdx].name;}
+    if(!musicPlaying){
+      playGeneratedTrack('chill1');
+      const mt=document.getElementById('music-track');if(mt)mt.textContent='Chill Breeze';
+    }
     ['click','keydown','touchstart'].forEach(e=>document.removeEventListener(e,_sm));
   };
   ['click','keydown','touchstart'].forEach(e=>document.addEventListener(e,_sm));

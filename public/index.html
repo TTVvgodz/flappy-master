@@ -247,10 +247,11 @@ input:focus{border-color:#5ec8f5;}
   <div id="hub-nav">
     <button class="hnb active" data-s="play" onclick="goSection('play')">▶ play</button>
     <button class="hnb" data-s="ranked" onclick="goSection('ranked')">⚔ ranked</button>
-    <button class="hnb" data-s="daily" onclick="goSection('daily')">📅 daily</button>
+    <button class="hnb" data-s="daily" onclick="goSection('daily')">📋 quests</button>
     <button class="hnb" data-s="cases" onclick="goSection('cases')">📦 cases</button>
     <button class="hnb" data-s="inventory" onclick="goSection('inventory')">🎒 inventory</button>
     <button class="hnb" data-s="trade" onclick="goSection('trade')">🔄 trade</button>
+    <button class="hnb" data-s="achievements" onclick="goSection('achievements')">🏅 feats</button>
     <button class="hnb" data-s="chat" onclick="goSection('chat')">💬 chat</button>
     <button class="hnb" data-s="profile" onclick="goSection('profile')">👤 me</button>
   </div>
@@ -302,13 +303,10 @@ input:focus{border-color:#5ec8f5;}
   <button class="btn-p" style="width:200px;margin-top:8px;" onclick="closeOpenOverlay()">nice!</button>
 </div>
 
-<!-- Music controls - top center -->
+<!-- Music controls - top center, simplified -->
 <div id="music-ctrl">
-  <button onclick="prevTrack()">⏮</button>
-  <button onclick="toggleMusic()" id="music-btn">▶</button>
-  <button onclick="nextTrack()">⏭</button>
-  <span id="music-track">Chill Breeze</span>
-  <input type="range" id="music-vol" min="0" max="100" value="30" oninput="setMusicVolume(this.value/2500)" style="width:55px;accent-color:#5ec8f5;"/>
+  <button onclick="toggleMusic()" id="music-btn" style="font-size:12px;">▶</button>
+  <span id="music-track" style="font-size:10px;color:rgba(255,255,255,.5);">Chill Breeze</span>
 </div>
 
 <!-- Dead screen buttons (center screen, shown on death) -->
